@@ -82,3 +82,7 @@ which naga can't express, and supporting it would have meant rewriting function 
 - All diagnostics go to **stdout** (not stderr), as `ERROR: 0:LINE: 'token' : message`. The `0` is the source-string index (always 0 for our single stdin unit); there's no column, so glslint derives one from the named token.
 - glslang does **not** stop at the first error. For a semantic failure it emits the root cause and then a string of *derived* errors (sometimes exact duplicates) on the same source line, and it inlines whole type definitions into some messages (an entire `uniform block{...}` for a bad UBO-member access). glslint therefore keeps the **first diagnostic per source line** (glslang emits the root cause first) and truncates over-long messages. The `compilation terminated` line (a *parse*-phase cascade only) and the `N compilation errors` summary are filtered out separately.
 - GLSL ES fragment shaders have **no default `float` precision**, so the assembler injects `precision highp float; precision highp int;` right after `#version`; re-declaring them later (as the shaders do) is legal.
+
+## License
+
+Dual-licensed under either [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.

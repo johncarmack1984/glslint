@@ -2,6 +2,9 @@
 name = "glslint"
 version = "0.1.0"
 edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "A luma.gl/deck.gl-aware GLSL checker and language server"
+repository = "https://github.com/johncarmack1984/glslint"
 
 [dependencies]
 anyhow = "1.0.102"
