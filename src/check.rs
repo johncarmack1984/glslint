@@ -287,3 +287,149 @@ fn tool_error(a: &Assembled, message: String) -> Diag {
         source: "glslint",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::assemble::{Assembled, Loc, Stage};
+    use std::path::PathBuf;
+
+    fn assembled(map: Vec<Option<Loc>>, source: &str) -> Assembled {
+        Assembled {
+            source: source.to_string(),
+            stage: Stage::Fragment,
+            map,
+            target: PathBuf::from("/proj/draw.frag.glsl"),
+            note: None,
+        }
+    }
+
+    // --- parse_located: the `<str>:<line>: 'token' : message` grammar ---
+
+    #[test]
+    fn parse_located_extracts_line_token_and_verbatim_message() {
+        let (line, token, msg) =
+            parse_located("0:5: 'undefined_a' : undeclared identifier ").unwrap();
+        assert_eq!(line, 5);
+        assert_eq!(token.as_deref(), Some("undefined_a"));
+        // The message is kept verbatim, glslang's leading 'token' and all.
+        assert_eq!(msg, "'undefined_a' : undeclared identifier");
+    }
+
+    #[test]
+    fn parse_located_empty_token_becomes_none() {
+        let (line, token, msg) = parse_located("0:5: '' : compilation terminated ").unwrap();
+        assert_eq!(line, 5);
+        assert_eq!(token, None);
+        assert!(msg.contains("compilation terminated"));
+    }
+
+    #[test]
+    fn parse_located_file_level_messages_have_no_prefix() {
+        // A bad `#version` and its follow-on carry no `0:LINE:` prefix → None,
+        // so they route to the line-1 fallback rather than a bogus location.
+        assert!(parse_located(
+            "#version: only version 300, 310, and 320 support the es profile"
+        )
+        .is_none());
+        assert!(parse_located("version not supported").is_none());
+    }
+
+    // --- locate_token: column refinement from the offending token ---
+
+    #[test]
+    fn locate_token_returns_char_column_and_length() {
+        let line = "  float alpha = nope;";
+        let (col, len) = locate_token(line, Some("nope")).unwrap();
+        assert_eq!(len, 4);
+        assert_eq!(col, line.find("nope").unwrap() as u32 + 1);
+    }
+
+    #[test]
+    fn locate_token_column_is_char_based_not_byte_based() {
+        // A multibyte char before the token: the column must count chars, not bytes
+        // (the LSP/CLI both treat `col` as a character offset).
+        let line = "x = café + bad;"; // 'é' is 2 bytes, 1 char
+        let (col, _) = locate_token(line, Some("bad")).unwrap();
+        let char_col = line.chars().position(|c| c == 'b').unwrap() as u32 + 1;
+        let byte_col = line.find("bad").unwrap() as u32 + 1;
+        assert_eq!(col, char_col);
+        assert_ne!(col, byte_col);
+    }
+
+    #[test]
+    fn locate_token_skips_operators_and_absent_tokens() {
+        assert_eq!(locate_token("a = b;", Some("=")), None); // punctuation: not hunted
+        assert_eq!(locate_token("float x;", Some("zzz")), None); // not present
+        assert_eq!(locate_token("float x;", None), None); // no token quoted
+    }
+
+    // --- map_located: translate an assembled line back to the original file ---
+
+    #[test]
+    fn map_located_drops_synthetic_lines() {
+        // map[0] = None → glslint owns that assembled line → diagnostic dropped.
+        let a = assembled(vec![None], "#version 300 es\n");
+        assert!(map_located(&a, 1, None, Severity::Error, "boom".into()).is_none());
+    }
+
+    #[test]
+    fn map_located_retargets_to_the_injected_module_file() {
+        // An error on an assembled line that came from an injected module must
+        // point at THAT module, not the file under check.
+        let module = PathBuf::from("/proj/windUniforms.glsl");
+        let a = assembled(
+            vec![None, Some(Loc { path: module.clone(), line: 3 })],
+            "#version 300 es\nfloat uMax;\n",
+        );
+        let d = map_located(&a, 2, Some("uMax"), Severity::Error, "boom".into()).unwrap();
+        assert_eq!(d.path, module);
+        assert_eq!(d.line, 3);
+    }
+
+    #[test]
+    fn map_located_truncates_giant_messages() {
+        let a = assembled(
+            vec![Some(Loc { path: PathBuf::from("/proj/x.frag.glsl"), line: 1 })],
+            "x\n",
+        );
+        let giant = format!("'=' : cannot convert from {}", "a".repeat(500));
+        let d = map_located(&a, 1, None, Severity::Error, giant).unwrap();
+        assert!(d.message.chars().count() <= 201);
+        assert!(d.message.ends_with('…'));
+    }
+
+    // --- parse_output: cascade collapse + file-level fallback ---
+
+    #[test]
+    fn parse_output_collapses_cascade_to_first_per_line() {
+        // Root cause + derived giant message + terminator + summary, all from one
+        // bad line → exactly one diagnostic (the root cause) survives.
+        let a = assembled(
+            vec![Some(Loc { path: PathBuf::from("/proj/x.frag.glsl"), line: 7 })],
+            "ignored\n",
+        );
+        let out = "x.frag.glsl\n\
+                   ERROR: 0:1: 'speed' : no such field in structure 'wind'\n\
+                   ERROR: 0:1: '=' :  cannot convert from a-giant-block-type\n\
+                   ERROR: 0:1: '' : compilation terminated \n\
+                   ERROR: 1 compilation errors.  No code generated.\n";
+        let diags = parse_output(&a, out);
+        assert_eq!(diags.len(), 1);
+        assert!(diags[0].message.contains("no such field"));
+        assert_eq!(diags[0].line, 7);
+    }
+
+    #[test]
+    fn parse_output_routes_file_level_errors_to_line_one() {
+        let a = assembled(vec![None], "#version 999 es\n");
+        let out = "stdin\n\
+                   ERROR: #version: only version 300, 310, and 320 support the es profile\n\
+                   ERROR: version not supported\n\
+                   ERROR: 1 compilation errors.  No code generated.\n";
+        let diags = parse_output(&a, out);
+        assert!(!diags.is_empty());
+        assert!(diags.iter().all(|d| d.line == 1));
+        assert!(diags.iter().any(|d| d.message.contains("version")));
+    }
+}

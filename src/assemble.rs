@@ -193,3 +193,56 @@ fn same_file(a: &Path, b: &Path) -> bool {
         _ => a == b,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn no_config() -> Config {
+        Config { preludes: vec![], modules: vec![], use_builtin_prelude: false }
+    }
+
+    #[test]
+    fn detect_stage_reads_the_filename() {
+        assert_eq!(detect_stage(Path::new("draw.vert.glsl")), Some(Stage::Vertex));
+        assert_eq!(detect_stage(Path::new("draw.frag.glsl")), Some(Stage::Fragment));
+        assert_eq!(detect_stage(Path::new("sim.comp.glsl")), Some(Stage::Compute));
+        // A bare module fragment is not a stage shader.
+        assert_eq!(detect_stage(Path::new("windUniforms.glsl")), None);
+    }
+
+    #[test]
+    fn line_map_has_exactly_one_entry_per_assembled_line() {
+        // The whole diagnostic translation indexes `map[asm_line - 1]`, so the map
+        // must stay 1:1 with the assembled source's lines.
+        let src = "#version 300 es\nprecision highp float;\nout vec4 c;\nvoid main(){ c = vec4(1.0); }\n";
+        let a = assemble(Path::new("draw.frag.glsl"), src, &no_config());
+        assert_eq!(a.source.lines().count(), a.map.len());
+    }
+
+    #[test]
+    fn version_is_hoisted_and_mapped_to_its_original_line() {
+        let src = "#version 300 es\nout vec4 c;\nvoid main(){ c = vec4(1.0); }\n";
+        let a = assemble(Path::new("draw.frag.glsl"), src, &no_config());
+        assert!(a.source.starts_with("#version 300 es"));
+        // Assembled line 1 (the hoisted directive) maps back to original line 1.
+        assert_eq!(a.map[0].as_ref().unwrap().line, 1);
+    }
+
+    #[test]
+    fn default_precision_is_injected() {
+        let src = "#version 300 es\nout vec4 c;\nvoid main(){}\n";
+        let a = assemble(Path::new("draw.frag.glsl"), src, &no_config());
+        assert!(a.source.contains("precision highp float;"));
+    }
+
+    #[test]
+    fn bare_module_fragment_is_wrapped_for_syntax_checking() {
+        // No stage in the name → wrapped with a synthetic main, still 1:1 mapped.
+        let src = "layout(std140) uniform U { float a; } u;\n";
+        let a = assemble(Path::new("windUniforms.glsl"), src, &no_config());
+        assert_eq!(a.stage, Stage::Fragment);
+        assert!(a.source.contains("void main()"));
+        assert_eq!(a.source.lines().count(), a.map.len());
+    }
+}
