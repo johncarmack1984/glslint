@@ -16,6 +16,13 @@ pub struct Symbol {
     pub loc: Loc,
 }
 
+/// A built-in function — deck.gl prelude or core GLSL. Hover/completion only.
+#[derive(Debug, Clone)]
+pub struct Builtin {
+    pub signature: String,
+    pub origin: &'static str,
+}
+
 #[derive(Debug, Clone)]
 pub struct Ubo {
     pub block_name: String,
@@ -30,9 +37,9 @@ pub struct SymbolIndex {
     pub functions: HashMap<String, Symbol>,
     /// Keyed by the block *instance* name (e.g. `wind`), not the block type.
     pub ubos: HashMap<String, Ubo>,
-    /// deck.gl builtins from the injected prelude — name -> signature. Hover-only:
-    /// they're stubbed in at link time, so there's no source file to jump to.
-    pub builtins: HashMap<String, String>,
+    /// Built-in functions (deck prelude + core GLSL) keyed by name — hover/
+    /// completion only; no source location to navigate to.
+    pub builtins: HashMap<String, Builtin>,
 }
 
 /// A resolved hover / definition target. `loc` is `None` for deck builtins, which
@@ -97,6 +104,7 @@ pub fn index(a: &Assembled) -> SymbolIndex {
         i += 1;
     }
     index_builtins(&mut idx);
+    index_glsl_builtins(&mut idx);
     idx
 }
 
@@ -104,10 +112,55 @@ pub fn index(a: &Assembled) -> SymbolIndex {
 fn index_builtins(idx: &mut SymbolIndex) {
     for line in crate::assemble::BUILTIN_PRELUDE.lines() {
         if let Some((name, sig)) = builtin_signature(line.trim()) {
-            idx.builtins.entry(name).or_insert(sig);
+            idx.builtins
+                .entry(name)
+                .or_insert(Builtin { signature: sig, origin: "deck.gl built-in (injected at link time)" });
         }
     }
 }
+
+/// Index the core GLSL ES built-in functions (the ones with no source file).
+/// Signatures use the spec's shorthand (`genType`, `gvec4`, `sampler`).
+fn index_glsl_builtins(idx: &mut SymbolIndex) {
+    for (name, sig) in GLSL_BUILTINS {
+        idx.builtins
+            .entry((*name).to_string())
+            .or_insert(Builtin { signature: (*sig).to_string(), origin: "GLSL ES built-in" });
+    }
+}
+
+#[rustfmt::skip]
+const GLSL_BUILTINS: &[(&str, &str)] = &[
+    ("radians", "genType radians(genType degrees)"),
+    ("degrees", "genType degrees(genType radians)"),
+    ("sin", "genType sin(genType angle)"), ("cos", "genType cos(genType angle)"),
+    ("tan", "genType tan(genType angle)"), ("asin", "genType asin(genType x)"),
+    ("acos", "genType acos(genType x)"), ("atan", "genType atan(genType y, genType x)"),
+    ("pow", "genType pow(genType x, genType y)"), ("exp", "genType exp(genType x)"),
+    ("log", "genType log(genType x)"), ("exp2", "genType exp2(genType x)"),
+    ("log2", "genType log2(genType x)"), ("sqrt", "genType sqrt(genType x)"),
+    ("inversesqrt", "genType inversesqrt(genType x)"), ("abs", "genType abs(genType x)"),
+    ("sign", "genType sign(genType x)"), ("floor", "genType floor(genType x)"),
+    ("ceil", "genType ceil(genType x)"), ("fract", "genType fract(genType x)"),
+    ("mod", "genType mod(genType x, genType y)"), ("round", "genType round(genType x)"),
+    ("min", "genType min(genType x, genType y)"), ("max", "genType max(genType x, genType y)"),
+    ("clamp", "genType clamp(genType x, genType minVal, genType maxVal)"),
+    ("mix", "genType mix(genType x, genType y, genType a)"),
+    ("step", "genType step(genType edge, genType x)"),
+    ("smoothstep", "genType smoothstep(genType edge0, genType edge1, genType x)"),
+    ("length", "float length(genType x)"), ("distance", "float distance(genType p0, genType p1)"),
+    ("dot", "float dot(genType x, genType y)"), ("cross", "vec3 cross(vec3 x, vec3 y)"),
+    ("normalize", "genType normalize(genType x)"),
+    ("reflect", "genType reflect(genType I, genType N)"),
+    ("refract", "genType refract(genType I, genType N, float eta)"),
+    ("texture", "gvec4 texture(sampler tex, vec coord [, float bias])"),
+    ("textureLod", "gvec4 textureLod(sampler tex, vec coord, float lod)"),
+    ("texelFetch", "gvec4 texelFetch(sampler tex, ivec coord, int lod)"),
+    ("textureSize", "ivec textureSize(sampler tex, int lod)"),
+    ("dFdx", "genType dFdx(genType p)"), ("dFdy", "genType dFdy(genType p)"),
+    ("fwidth", "genType fwidth(genType p)"),
+    ("transpose", "mat transpose(mat m)"), ("inverse", "mat inverse(mat m)"),
+];
 
 /// Extract `(name, signature)` from a possibly single-line-body function like
 /// `vec2 project_pixel_size_to_clipspace(vec2 pixels) { return pixels; }`.
@@ -249,9 +302,9 @@ pub fn resolve(index: &SymbolIndex, line: &str, col: usize) -> Option<Hit> {
     if let Some(u) = index.ubos.get(word) {
         return Some(Hit { detail: u.detail.clone(), note: None, loc: Some(u.loc.clone()) });
     }
-    index.builtins.get(word).map(|sig| Hit {
-        detail: sig.clone(),
-        note: Some("deck.gl built-in (injected at link time)".to_string()),
+    index.builtins.get(word).map(|b| Hit {
+        detail: b.signature.clone(),
+        note: Some(b.origin.to_string()),
         loc: None,
     })
 }
@@ -283,8 +336,8 @@ pub fn complete(index: &SymbolIndex, line: &str, col: usize) -> Vec<Completion> 
     for (n, u) in &index.ubos {
         out.push(Completion { label: n.clone(), detail: u.detail.clone(), kind: SymKind::Block });
     }
-    for (n, sig) in &index.builtins {
-        out.push(Completion { label: n.clone(), detail: sig.clone(), kind: SymKind::Builtin });
+    for (n, b) in &index.builtins {
+        out.push(Completion { label: n.clone(), detail: b.signature.clone(), kind: SymKind::Builtin });
     }
     out
 }
@@ -465,6 +518,18 @@ mod tests {
         assert!(hit.detail.starts_with("vec4 project_position_to_clipspace("));
         assert!(hit.loc.is_none()); // no source file -> no go-to-definition
         assert!(hit.note.as_deref().unwrap().contains("deck.gl"));
+    }
+
+    #[test]
+    fn core_glsl_builtin_is_hover_only() {
+        let idx = index(&fixture());
+        let line = "  x = clamp(a, b, c);";
+        let hit = resolve(&idx, line, line.find("clamp").unwrap() + 2).expect("clamp resolves");
+        assert!(hit.detail.contains("clamp("));
+        assert!(hit.loc.is_none());
+        assert_eq!(hit.note.as_deref(), Some("GLSL ES built-in"));
+        // It's offered in general completion too.
+        assert!(complete(&idx, "  ", 2).iter().any(|c| c.label == "clamp"));
     }
 
     #[test]
