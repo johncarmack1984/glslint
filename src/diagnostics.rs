@@ -1,5 +1,6 @@
 //! The single diagnostic type every stage produces, plus terminal rendering.
 
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,14 +40,15 @@ pub struct Diag {
     pub len: u32,
     pub severity: Severity,
     pub message: String,
-    /// Which stage emitted it: "parse" | "validate" | "lint".
+    /// Which stage emitted it: "glslang" | "lint" | "glslint" (the last for
+    /// tool-level failures, e.g. a missing validator).
     pub source: &'static str,
 }
 
 /// Print one diagnostic in `path:line:col: severity: message [source]` form,
 /// with color unless `NO_COLOR` is set or output isn't a tty-ish stream.
 pub fn print_diag(d: &Diag) {
-    let color = std::env::var_os("NO_COLOR").is_none();
+    let color = std::env::var_os("NO_COLOR").is_none() && std::io::stdout().is_terminal();
     let (c0, c1, dim, dim0) = if color {
         (d.severity.color(), "\x1b[0m", "\x1b[2m", "\x1b[0m")
     } else {

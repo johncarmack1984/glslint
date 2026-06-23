@@ -43,6 +43,15 @@ fn check_assembled(a: &Assembled) -> Vec<Diag> {
                     .to_string(),
             )];
         }
+        Err(RunError::BadOverride(e)) => {
+            return vec![tool_error(
+                a,
+                format!(
+                    "GLSLINT_GLSLANG is set but couldn't be run ({e}) — point it at \
+                     the glslangValidator (or glslang) executable"
+                ),
+            )];
+        }
         Err(RunError::Io(e)) => {
             return vec![tool_error(a, format!("failed to run glslangValidator: {e}"))];
         }
@@ -66,6 +75,8 @@ fn check_assembled(a: &Assembled) -> Vec<Diag> {
 
 enum RunError {
     NotFound,
+    /// `GLSLINT_GLSLANG` was set but the binary it names couldn't be spawned.
+    BadOverride(std::io::Error),
     Io(std::io::Error),
 }
 
@@ -77,7 +88,8 @@ struct GlslangRun {
 /// Run glslangValidator on the assembled source via stdin. Tries `glslangValidator`
 /// then `glslang` (the renamed binary), or `$GLSLINT_GLSLANG` when set.
 fn run_glslang(a: &Assembled) -> Result<GlslangRun, RunError> {
-    for bin in glslang_candidates() {
+    let (candidates, explicit) = glslang_candidates();
+    for bin in candidates {
         let mut child = match Command::new(&bin)
             .arg("--stdin")
             .arg("-S")
@@ -88,7 +100,10 @@ fn run_glslang(a: &Assembled) -> Result<GlslangRun, RunError> {
             .spawn()
         {
             Ok(c) => c,
-            // Binary absent: fall through to the next candidate.
+            // An explicit GLSLINT_GLSLANG that won't spawn (missing, a directory,
+            // not executable) is a config error, not "no validator installed".
+            Err(e) if explicit => return Err(RunError::BadOverride(e)),
+            // Binary absent on PATH: fall through to the next candidate.
             Err(e) if e.kind() == ErrorKind::NotFound => continue,
             Err(e) => return Err(RunError::Io(e)),
         };
@@ -110,11 +125,13 @@ fn run_glslang(a: &Assembled) -> Result<GlslangRun, RunError> {
     Err(RunError::NotFound)
 }
 
-fn glslang_candidates() -> Vec<String> {
+/// The binaries to try, and whether the choice was forced via `GLSLINT_GLSLANG`
+/// (which changes how a spawn failure is reported).
+fn glslang_candidates() -> (Vec<String>, bool) {
     if let Some(bin) = std::env::var_os("GLSLINT_GLSLANG") {
-        return vec![bin.to_string_lossy().into_owned()];
+        return (vec![bin.to_string_lossy().into_owned()], true);
     }
-    vec!["glslangValidator".to_string(), "glslang".to_string()]
+    (vec!["glslangValidator".to_string(), "glslang".to_string()], false)
 }
 
 /// Parse glslangValidator's diagnostics and map each home.

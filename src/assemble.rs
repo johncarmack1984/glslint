@@ -85,7 +85,7 @@ impl Builder {
     /// Append a block from `path`, mapping each line back to it.
     fn push_block(&mut self, content: &str, path: &Path) {
         for (i, l) in content.lines().enumerate() {
-            self.push(l.to_string(), Some(Loc { path: path.to_path_buf(), line: i as u32 + 1 }));
+            self.push(l.to_string(), Some(Loc { path: path.to_path_buf(), line: line_no(i) }));
         }
     }
     /// Append lines we synthesized; errors here map nowhere.
@@ -117,6 +117,12 @@ pub fn detect_stage(path: &Path) -> Option<Stage> {
     }
 }
 
+/// 1-based line number for a 0-based index. Saturating, so a pathological
+/// (>4-billion-line) file can't wrap a line number into a wrong-but-plausible one.
+pub(crate) fn line_no(i: usize) -> u32 {
+    u32::try_from(i).unwrap_or(u32::MAX).saturating_add(1)
+}
+
 pub fn assemble(target: &Path, source: &str, config: &Config) -> Assembled {
     match detect_stage(target) {
         Some(stage) => assemble_stage(target, source, config, stage),
@@ -136,7 +142,7 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
     match vidx {
         Some(i) => b.push(
             lines[i].to_string(),
-            Some(Loc { path: target.to_path_buf(), line: i as u32 + 1 }),
+            Some(Loc { path: target.to_path_buf(), line: line_no(i) }),
         ),
         None => b.push_synthetic(DEFAULT_VERSION),
     }
@@ -165,7 +171,7 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
         if Some(i) == vidx {
             continue;
         }
-        b.push(l.to_string(), Some(Loc { path: target.to_path_buf(), line: i as u32 + 1 }));
+        b.push(l.to_string(), Some(Loc { path: target.to_path_buf(), line: line_no(i) }));
     }
 
     b.finish(stage, target, None)
@@ -179,7 +185,7 @@ fn wrap_fragment(target: &Path, source: &str) -> Assembled {
     b.push_synthetic(DEFAULT_VERSION);
     b.push_synthetic(DEFAULT_PRECISION);
     for (i, l) in source.lines().enumerate() {
-        b.push(l.to_string(), Some(Loc { path: target.to_path_buf(), line: i as u32 + 1 }));
+        b.push(l.to_string(), Some(Loc { path: target.to_path_buf(), line: line_no(i) }));
     }
     b.push_synthetic("void main() {}");
     b.finish(Stage::Fragment, target, Some("module fragment (syntax-only)"))

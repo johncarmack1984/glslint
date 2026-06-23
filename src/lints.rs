@@ -5,6 +5,7 @@
 //! Rules here must be zero-false-positive: they only fire on the author's own
 //! lines (never injected code) and on patterns that are unambiguously wrong.
 
+use crate::assemble::line_no;
 use crate::diagnostics::{Diag, Severity};
 use std::path::Path;
 
@@ -41,7 +42,7 @@ fn es3_legacy(target: &Path, source: &str, out: &mut Vec<Diag>) {
     for (i, line) in source.lines().enumerate() {
         // Ignore anything after a line comment to avoid flagging prose.
         let code = line.split("//").next().unwrap_or(line);
-        let lineno = i as u32 + 1;
+        let lineno = line_no(i);
 
         for (needle, msg) in REMOVED {
             if let Some(byte) = code.find(needle) {
