@@ -22,12 +22,28 @@ cargo build
 
 `check` resolves config by walking up for a `glsl-lsp.toml`; with none, it uses a built-in deck `project32` prelude and auto-discovers sibling `*Uniforms.glsl` module fragments next to the target.
 
+The faithful form mirrors luma's own model — name the modules once, then bind each shader to the modules it actually uses (the `new Model({modules: [...]})` call in JS). Each shader then gets exactly its modules, so referencing a uniform block the shader doesn't have is flagged instead of silently resolved:
+
 ```toml
-# glsl-lsp.toml (optional)
-preludes = ["preludes/deck.glsl"]
-modules  = ["src/shaders/windUniforms.glsl", "src/shaders/blitUniforms.glsl"]
-builtin_prelude = true
+# glsl-lsp.toml
+[[module]]
+name = "windUniforms"
+source = "src/shaders/windUniforms.glsl"
+
+[[module]]
+name = "project32"
+builtin = true            # deck project32 (baked-in stub for now)
+
+[[shader]]
+match   = "draw.*.glsl"   # first matching binding wins
+modules = ["project32", "windUniforms"]
+
+[[shader]]
+match   = "blit.*.glsl"
+modules = ["blitUniforms"]
 ```
+
+Without `[[shader]]` bindings it accepts a legacy global list (`preludes` / `modules` / `builtin_prelude`) applied to every shader; with no `glsl-lsp.toml` at all it falls back to zero-config sibling discovery.
 
 ## Editor integration
 
