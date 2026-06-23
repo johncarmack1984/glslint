@@ -13,6 +13,7 @@ mod assemble;
 mod check;
 mod config;
 mod diagnostics;
+mod drift;
 mod lints;
 mod lsp;
 mod symbols;

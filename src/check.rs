@@ -26,6 +26,10 @@ pub fn check_source(path: &Path, source: &str) -> Vec<Diag> {
 
     let mut diags = check_assembled(&assembled);
     diags.extend(lints::run_lints(path, source));
+    // If this file is a module with a JS `uniformTypes` mirror, cross-check them.
+    if let Some((module, types_path)) = crate::config::drift_for(path) {
+        diags.extend(crate::drift::check(path, source, &module, &types_path));
+    }
     diags.sort_by(|a, b| {
         (a.path.as_path(), a.line, a.col).cmp(&(b.path.as_path(), b.line, b.col))
     });

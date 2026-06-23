@@ -29,6 +29,7 @@ The faithful form mirrors luma's own model — name the modules once, then bind 
 [[module]]
 name = "windUniforms"
 source = "src/shaders/windUniforms.glsl"
+types  = "src/modules.ts"  # optional: cross-check the UBO block vs JS uniformTypes
 
 [[module]]
 name = "project32"
@@ -54,6 +55,7 @@ A minimal VS Code / Cursor extension lives in [`editors/vscode/`](editors/vscode
 - `assemble.rs` — hoists the target's own `#version` to the top, injects default precision (so the deck prelude's `float`/`vec*` are well-formed before the shader's own `precision` line), then the prelude + module blocks, recording a per-line map back to the originals. Source is passed through **verbatim** — glslangValidator validates GLSL ES natively, so there are no source transforms. Stage is inferred from the filename (`*.vert.glsl` / `*.frag.glsl` / `*.comp.glsl`); bare module fragments are wrapped in a dummy shell for syntax-only checking.
 - `check.rs` — runs `glslangValidator --stdin -S <stage>` over the assembled unit, parses its `ERROR: 0:LINE:` / `WARNING:` output, collapses glslang's per-line error cascades to the root cause, and translates each line back to the original file:line via the map (refining the column from the offending token when glslang names one). **This mapping is the hard part and it works** — errors land on `draw.vert.glsl:4`, and an error inside an injected module lands on `windUniforms.glsl:3`, not the assembled unit.
 - `lints.rs` — opinionated, zero-false-positive rules (currently: GLSL ES 1.00 builtins/qualifiers removed in `#version 300 es`). Runs alongside the validator, so a `varying` declaration draws both the raw glslang error and a friendlier migration hint.
+- `drift.rs` — when a module declares a `types` JS file (see config), cross-checks its GLSL UBO block against that file's `uniformTypes` and warns on drift (a member on one side only, or a type mismatch). luma keeps these two in sync by hand; nothing else sees both at once. Conservative — silent unless it can confidently read both sides.
 - `symbols.rs` — a line-based symbol scanner over the assembled unit (UBO/interface blocks, top-level `uniform`/`in`/`out`, function definitions, deck builtins), each symbol carrying its original `Loc`. Powers hover, go-to-definition, completion, and the document outline — including the cross-module jump: `wind.uMin` in `draw.vert.glsl` resolves to its declaration in `windUniforms.glsl`.
 - `lsp.rs` — tower-lsp; `publishDiagnostics` on open/change/save, plus hover, go-to-definition, completion (`wind.` → member list), and document symbols, filtered to the edited document. Edits are debounced and the (subprocess-spawning) check runs off the async runtime, with a per-document generation guard so a slow check can't clobber a newer edit.
 

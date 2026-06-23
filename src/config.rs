@@ -53,6 +53,9 @@ struct ModuleDef {
     /// The baked-in deck project32 prelude stub.
     #[serde(default)]
     builtin: bool,
+    /// A JS/TS file whose `uniformTypes` mirrors this module's UBO block. When
+    /// set, glslint cross-checks the two and warns on drift.
+    types: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -156,6 +159,31 @@ fn join_all(base: &Path, rels: &[String]) -> Vec<PathBuf> {
     rels.iter().map(|p| base.join(p)).collect()
 }
 
+/// If `file` is a module's GLSL `source` and that module declares a `types` JS
+/// file, return `(module name, resolved types path)` for the drift check.
+pub fn drift_for(file: &Path) -> Option<(String, PathBuf)> {
+    let dir = file.parent().unwrap_or(Path::new("."));
+    let toml_path = find_up(dir, "glsl-lsp.toml")?;
+    let text = std::fs::read_to_string(&toml_path).ok()?;
+    let cf: ConfigFile = toml::from_str(&text).ok()?;
+    let base = toml_path.parent().unwrap_or(Path::new("."));
+    for m in &cf.module_defs {
+        if let (Some(src), Some(types)) = (&m.source, &m.types) {
+            if same_path(&base.join(src), file) {
+                return Some((m.name.clone(), base.join(types)));
+            }
+        }
+    }
+    None
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => a == b,
+    }
+}
+
 /// Match `text` against a simple glob: `*` is any run (including `/`), `?` is any
 /// single char. Backtracking two-pointer; no character classes.
 fn glob_match(pattern: &str, text: &str) -> bool {
@@ -235,9 +263,9 @@ mod tests {
     fn cf() -> ConfigFile {
         ConfigFile {
             module_defs: vec![
-                ModuleDef { name: "windUniforms".into(), source: Some("src/shaders/windUniforms.glsl".into()), builtin: false },
-                ModuleDef { name: "blitUniforms".into(), source: Some("src/shaders/blitUniforms.glsl".into()), builtin: false },
-                ModuleDef { name: "project32".into(), source: None, builtin: true },
+                ModuleDef { name: "windUniforms".into(), source: Some("src/shaders/windUniforms.glsl".into()), builtin: false, types: None },
+                ModuleDef { name: "blitUniforms".into(), source: Some("src/shaders/blitUniforms.glsl".into()), builtin: false, types: None },
+                ModuleDef { name: "project32".into(), source: None, builtin: true, types: None },
             ],
             shaders: vec![
                 ShaderBinding { pattern: "draw.*.glsl".into(), modules: vec!["project32".into(), "windUniforms".into()], builtin_prelude: None },
