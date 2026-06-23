@@ -1,0 +1,56 @@
+name: release
+
+# Build prebuilt binaries for each platform and attach them to a GitHub Release
+# when a v* tag is pushed. The VS Code/Cursor extension downloads the matching
+# asset on first run (see editors/vscode/extension.js).
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Stage asset (unix)
+        if: runner.os != 'Windows'
+        run: cp "target/${{ matrix.target }}/release/glslint" "glslint-${{ matrix.target }}"
+      - name: Stage asset (windows)
+        if: runner.os == 'Windows'
+        run: copy "target\${{ matrix.target }}\release\glslint.exe" "glslint-${{ matrix.target }}.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: glslint-${{ matrix.target }}
+          path: glslint-${{ matrix.target }}*
+          if-no-files-found: error
+
+  release:
+    name: release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/glslint-*
+          fail_on_unmatched_files: true

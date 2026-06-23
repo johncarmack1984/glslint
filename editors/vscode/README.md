@@ -4,16 +4,23 @@ A thin LSP client that runs the `glslint` binary in `lsp` mode and surfaces its 
 
 ## Setup
 
-1. Install the binary:
-   ```sh
-   cd ../..                # the glslint repo root
-   cargo install --path .  # builds a release binary into ~/.cargo/bin/glslint
-   ```
-   The extension auto-resolves `~/.cargo/bin/glslint` by absolute path (so it's found even when a GUI-launched editor didn't inherit your shell PATH) — no `glslint.path` setting needed. `glslint` shells out to `glslangValidator`, so also: `brew install glslang`.
-2. Install the client's dependency:
-   ```sh
-   cd editors/vscode && npm install
-   ```
+The extension resolves the `glslint` binary in this order: an explicit `glslint.path` setting → a local install (`~/.cargo/bin/glslint`, then PATH) → otherwise it **downloads** the prebuilt binary for your platform from this repo's GitHub Release and caches it in the extension's storage. So the only hard requirement is `glslangValidator` (glslint shells out to it):
+
+```sh
+brew install glslang
+```
+
+To use a local build instead of the downloaded one — recommended while hacking on glslint — install it:
+
+```sh
+cargo install --path .   # release binary into ~/.cargo/bin/glslint
+```
+
+Then install the client's dependency:
+
+```sh
+cd editors/vscode && npm install
+```
 
 ## Run it
 
