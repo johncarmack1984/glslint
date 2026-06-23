@@ -1,6 +1,6 @@
 # glslint — VS Code / Cursor extension
 
-A thin LSP client that runs the `glslint` binary in `lsp` mode and surfaces its diagnostics on GLSL files. Works in VS Code and Cursor (identical extension API).
+A thin LSP client that runs the `glslint` binary in `lsp` mode and surfaces its diagnostics on GLSL files. It also ships GLSL syntax highlighting (a TextMate grammar) plus bracket/comment editing config. Works in VS Code and Cursor (identical extension API).
 
 ## Setup
 

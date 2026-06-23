@@ -21,7 +21,15 @@
       {
         "id": "glsl",
         "aliases": ["GLSL", "glsl"],
-        "extensions": [".glsl", ".vert", ".frag", ".comp", ".vs", ".fs"]
+        "extensions": [".glsl", ".vert", ".frag", ".comp", ".vs", ".fs"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "glsl",
+        "scopeName": "source.glsl",
+        "path": "./syntaxes/glsl.tmLanguage.json"
       }
     ],
     "configuration": {

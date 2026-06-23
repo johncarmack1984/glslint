@@ -1,0 +1,73 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "GLSL",
+  "scopeName": "source.glsl",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#preprocessor" },
+    { "include": "#keywords" },
+    { "include": "#qualifiers" },
+    { "include": "#types" },
+    { "include": "#constants" },
+    { "include": "#builtin-functions" },
+    { "include": "#builtin-variables" },
+    { "include": "#numbers" },
+    { "include": "#function-call" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.glsl", "match": "//.*$" },
+        { "name": "comment.block.glsl", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "preprocessor": {
+      "patterns": [
+        {
+          "name": "meta.preprocessor.glsl",
+          "match": "^\\s*#\\s*(version|define|undef|if|ifdef|ifndef|else|elif|endif|error|pragma|extension|line|include)\\b.*$",
+          "captures": { "1": { "name": "keyword.control.preprocessor.glsl" } }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        { "name": "keyword.control.glsl", "match": "\\b(if|else|for|while|do|switch|case|default|break|continue|return|discard)\\b" },
+        { "name": "keyword.other.glsl", "match": "\\b(struct)\\b" }
+      ]
+    },
+    "qualifiers": {
+      "name": "storage.modifier.glsl",
+      "match": "\\b(attribute|varying|uniform|buffer|shared|const|in|out|inout|layout|centroid|flat|smooth|noperspective|patch|sample|invariant|precise|coherent|volatile|restrict|readonly|writeonly|lowp|mediump|highp|precision)\\b"
+    },
+    "types": {
+      "name": "storage.type.glsl",
+      "match": "\\b(void|bool|int|uint|float|double|atomic_uint|[biud]?vec[234]|d?mat[234](x[234])?|sampler[123]D|sampler2DArray|samplerCube|samplerCubeArray|sampler[12]DShadow|samplerCubeShadow|sampler2DArrayShadow|[iu]sampler[123]D|[iu]sampler2DArray|[iu]samplerCube)\\b"
+    },
+    "constants": {
+      "name": "constant.language.glsl",
+      "match": "\\b(true|false)\\b"
+    },
+    "builtin-variables": {
+      "name": "variable.language.glsl",
+      "match": "\\bgl_[A-Za-z0-9_]+\\b"
+    },
+    "builtin-functions": {
+      "name": "support.function.glsl",
+      "match": "\\b(radians|degrees|sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|asinh|acosh|atanh|pow|exp|log|exp2|log2|sqrt|inversesqrt|abs|sign|floor|trunc|round|roundEven|ceil|fract|mod|modf|min|max|clamp|mix|step|smoothstep|isnan|isinf|floatBitsToInt|floatBitsToUint|intBitsToFloat|uintBitsToFloat|fma|frexp|ldexp|packSnorm2x16|unpackSnorm2x16|packUnorm2x16|unpackUnorm2x16|packHalf2x16|unpackHalf2x16|length|distance|dot|cross|normalize|faceforward|reflect|refract|matrixCompMult|outerProduct|transpose|determinant|inverse|lessThan|lessThanEqual|greaterThan|greaterThanEqual|equal|notEqual|any|all|not|texture|textureProj|textureLod|textureOffset|texelFetch|texelFetchOffset|textureProjOffset|textureLodOffset|textureProjLod|textureProjLodOffset|textureGrad|textureGradOffset|textureProjGrad|textureProjGradOffset|textureSize|textureGather|textureGatherOffset|dFdx|dFdy|fwidth)\\b"
+    },
+    "numbers": {
+      "name": "constant.numeric.glsl",
+      "match": "\\b(0[xX][0-9a-fA-F]+[uU]?|(\\d+\\.\\d*|\\.\\d+|\\d+)([eE][+-]?\\d+)?[fF]?|\\d+[uU]?)\\b"
+    },
+    "function-call": {
+      "match": "\\b([A-Za-z_]\\w*)\\s*(?=\\()",
+      "captures": { "1": { "name": "entity.name.function.glsl" } }
+    },
+    "operators": {
+      "name": "keyword.operator.glsl",
+      "match": "(\\+\\+|--|\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|<<=|>>=|==|!=|<=|>=|&&|\\|\\||<<|>>|[-+*/%<>=!&|^~?:])"
+    }
+  }
+}
