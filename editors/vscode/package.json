@@ -37,8 +37,8 @@
       "properties": {
         "glslint.path": {
           "type": "string",
-          "default": "glslint",
-          "description": "Path to the glslint executable. Set an absolute path (e.g. .../target/debug/glslint), or install it on PATH with `cargo install --path .`."
+          "default": "",
+          "description": "Path to the glslint executable. Leave empty to auto-resolve (~/.cargo/bin/glslint from `cargo install --path .`, then `glslint` on PATH). Set an absolute path to override."
         }
       }
     }

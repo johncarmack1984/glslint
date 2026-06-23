@@ -4,13 +4,12 @@ A thin LSP client that runs the `glslint` binary in `lsp` mode and surfaces its 
 
 ## Setup
 
-1. Build (or install) the binary so the extension can find it:
+1. Install the binary:
    ```sh
-   cd ../..            # the glslint repo root
-   cargo install --path .     # puts `glslint` on PATH (~/.cargo/bin)
-   # — or just `cargo build` and point glslint.path at ./target/debug/glslint
+   cd ../..                # the glslint repo root
+   cargo install --path .  # builds a release binary into ~/.cargo/bin/glslint
    ```
-   `glslint` shells out to `glslangValidator`, so also: `brew install glslang`.
+   The extension auto-resolves `~/.cargo/bin/glslint` by absolute path (so it's found even when a GUI-launched editor didn't inherit your shell PATH) — no `glslint.path` setting needed. `glslint` shells out to `glslangValidator`, so also: `brew install glslang`.
 2. Install the client's dependency:
    ```sh
    cd editors/vscode && npm install
@@ -21,7 +20,7 @@ A thin LSP client that runs the `glslint` binary in `lsp` mode and surfaces its 
 - **Dev host (fastest):** open the `editors/vscode` folder in VS Code/Cursor and press `F5`. That launches an Extension Development Host; open your `deck-wind-layer` folder in it and open a shader (e.g. `src/shaders/draw.vert.glsl`).
 - **Install for real:** `npx @vscode/vsce package` here, then install the resulting `.vsix` (`code --install-extension glslint-0.1.0.vsix`).
 
-If the binary isn't on PATH, set it in your settings:
+If you didn't `cargo install` (e.g. you want the debug binary), point the setting at it:
 ```json
 { "glslint.path": "/absolute/path/to/glslint/target/debug/glslint" }
 ```
