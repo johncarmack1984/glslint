@@ -199,7 +199,9 @@ fn parse_located(rest: &str) -> Option<(u32, Option<String>, String)> {
 }
 
 /// Map a glslang `0:LINE` location to the original file, refining the column from
-/// the offending token when it appears verbatim on the line.
+/// the offending token when it appears verbatim on the line. An error on a line
+/// glslint itself injected is surfaced at the target's line 1 rather than dropped,
+/// so a regression in our own prelude/setup can't pass silently.
 fn map_located(
     a: &Assembled,
     asm_line: u32,
@@ -208,26 +210,40 @@ fn map_located(
     message: String,
 ) -> Option<Diag> {
     let idx = asm_line.checked_sub(1)? as usize;
-    let loc = a.map.get(idx)?.as_ref()?; // None => a synthetic line we own; drop.
-
-    // The assembled line is a verbatim copy of the original (no per-line
-    // rewrites), so a token column found here is valid against the original too.
-    let (col, len) = a
-        .source
-        .lines()
-        .nth(idx)
-        .and_then(|text| locate_token(text, token))
-        .unwrap_or((1, 1));
-
-    Some(Diag {
-        path: loc.path.clone(),
-        line: loc.line,
-        col,
-        len,
-        severity,
-        message: truncate_message(message),
-        source: "glslang",
-    })
+    match a.map.get(idx)? {
+        // A line from a real source file: point the diagnostic there. The assembled
+        // line is a verbatim copy of the original (no per-line rewrites), so a token
+        // column found here is valid against the original too.
+        Some(loc) => {
+            let (col, len) = a
+                .source
+                .lines()
+                .nth(idx)
+                .and_then(|text| locate_token(text, token))
+                .unwrap_or((1, 1));
+            Some(Diag {
+                path: loc.path.clone(),
+                line: loc.line,
+                col,
+                len,
+                severity,
+                message: truncate_message(message),
+                source: "glslang",
+            })
+        }
+        // A line glslint injected (version / precision / prelude / wrapper main).
+        // Clean in normal operation; if it errors, that's a regression in our own
+        // code — surface it at line 1 instead of silently dropping it.
+        None => Some(Diag {
+            path: a.target.clone(),
+            line: 1,
+            col: 1,
+            len: 1,
+            severity,
+            message: truncate_message(format!("(in glslint-injected code) {message}")),
+            source: "glslang",
+        }),
+    }
 }
 
 /// Column (1-based char) and length of `token` within `line`, when it's an
@@ -239,9 +255,29 @@ fn locate_token(line: &str, token: Option<&str>) -> Option<(u32, u32)> {
     if !(first.is_alphanumeric() || first == '_') {
         return None; // operators / punctuation — don't hunt for a stray match
     }
-    let byte = line.find(tok)?;
-    let col = line[..byte].chars().count() as u32 + 1;
-    Some((col, tok.chars().count() as u32))
+    // First *whole-word* occurrence. glslang doesn't say which occurrence it meant,
+    // but matching on word boundaries at least avoids underlining `pos` inside
+    // `position` or `speed` inside `speedFactor`.
+    let bytes = line.as_bytes();
+    let mut from = 0;
+    while let Some(rel) = line[from..].find(tok) {
+        let start = from + rel;
+        let end = start + tok.len();
+        let left_ok = start == 0 || !is_word_byte(bytes[start - 1]);
+        let right_ok = end == line.len() || !is_word_byte(bytes[end]);
+        if left_ok && right_ok {
+            let col = line[..start].chars().count() as u32 + 1;
+            return Some((col, tok.chars().count() as u32));
+        }
+        from = start + 1;
+    }
+    None
+}
+
+/// An ASCII identifier byte (`[A-Za-z0-9_]`). A multibyte UTF-8 byte is not one,
+/// so a non-ASCII char correctly counts as a word boundary here.
+fn is_word_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
 }
 
 /// Collapse glslang's per-line error cascade to its root cause. For a semantic
@@ -364,13 +400,28 @@ mod tests {
         assert_eq!(locate_token("float x;", None), None); // no token quoted
     }
 
+    #[test]
+    fn locate_token_matches_whole_words_only() {
+        // Skips `speed` inside `speedFactor`, lands on the standalone occurrence.
+        let line = "float speedFactor; x = speed;";
+        let (col, len) = locate_token(line, Some("speed")).unwrap();
+        assert_eq!(len, 5);
+        assert_eq!(col, line.rfind("speed").unwrap() as u32 + 1);
+        // `pos` must not match inside `position`.
+        assert_eq!(locate_token("vec2 position;", Some("pos")), None);
+    }
+
     // --- map_located: translate an assembled line back to the original file ---
 
     #[test]
-    fn map_located_drops_synthetic_lines() {
-        // map[0] = None → glslint owns that assembled line → diagnostic dropped.
+    fn map_located_surfaces_injected_code_errors_at_line_one() {
+        // map[0] = None → glslint owns that assembled line. A real error there is a
+        // regression in our injected code; surface it (don't drop it) at line 1.
         let a = assembled(vec![None], "#version 300 es\n");
-        assert!(map_located(&a, 1, None, Severity::Error, "boom".into()).is_none());
+        let d = map_located(&a, 1, None, Severity::Error, "boom".into()).unwrap();
+        assert_eq!(d.line, 1);
+        assert_eq!(d.path, a.target);
+        assert!(d.message.contains("glslint-injected"));
     }
 
     #[test]
