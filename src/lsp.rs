@@ -90,13 +90,19 @@ impl Backend {
     /// document (cheap — no glslang subprocess) and scans it for symbols. Position
     /// columns are treated as byte offsets, correct for ASCII GLSL.
     fn resolve_at(&self, uri: &Url, pos: Position) -> Option<symbols::Hit> {
+        let (text, _, index) = self.index_for(uri)?;
+        let line = text.lines().nth(pos.line as usize)?;
+        symbols::resolve(&index, line, pos.character as usize)
+    }
+
+    /// Assemble the document and scan it for symbols. Cheap — no glslang
+    /// subprocess. Returns the document text and its file path alongside the index.
+    fn index_for(&self, uri: &Url) -> Option<(String, std::path::PathBuf, symbols::SymbolIndex)> {
         let text = self.docs.lock().unwrap().get(uri)?.clone();
         let path = uri.to_file_path().ok()?;
         let config = Config::resolve_for(&path);
         let assembled = assemble::assemble(&path, &text, &config);
-        let index = symbols::index(&assembled);
-        let line = text.lines().nth(pos.line as usize)?;
-        symbols::resolve(&index, line, pos.character as usize)
+        Some((text, path, symbols::index(&assembled)))
     }
 }
 
@@ -112,6 +118,11 @@ impl LanguageServer for Backend {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
+                document_symbol_provider: Some(OneOf::Left(true)),
+                completion_provider: Some(CompletionOptions {
+                    trigger_characters: Some(vec![".".to_string()]),
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
         })
@@ -170,11 +181,45 @@ impl LanguageServer for Backend {
     ) -> tower_lsp::jsonrpc::Result<Option<GotoDefinitionResponse>> {
         let p = params.text_document_position_params;
         Ok(self.resolve_at(&p.text_document.uri, p.position).and_then(|hit| {
-            let uri = Url::from_file_path(&hit.loc.path).ok()?;
-            let line = hit.loc.line.saturating_sub(1);
+            let loc = hit.loc?; // builtins have no source location
+            let uri = Url::from_file_path(&loc.path).ok()?;
+            let line = loc.line.saturating_sub(1);
             let range = Range::new(Position::new(line, 0), Position::new(line, 0));
             Some(GotoDefinitionResponse::Scalar(Location { uri, range }))
         }))
+    }
+
+    async fn completion(
+        &self,
+        params: CompletionParams,
+    ) -> tower_lsp::jsonrpc::Result<Option<CompletionResponse>> {
+        let p = params.text_document_position;
+        let Some((text, _, index)) = self.index_for(&p.text_document.uri) else {
+            return Ok(None);
+        };
+        let Some(line) = text.lines().nth(p.position.line as usize) else {
+            return Ok(None);
+        };
+        let items: Vec<CompletionItem> = symbols::complete(&index, line, p.position.character as usize)
+            .into_iter()
+            .map(to_completion_item)
+            .collect();
+        Ok(Some(CompletionResponse::Array(items)))
+    }
+
+    async fn document_symbol(
+        &self,
+        params: DocumentSymbolParams,
+    ) -> tower_lsp::jsonrpc::Result<Option<DocumentSymbolResponse>> {
+        let Some((text, path, index)) = self.index_for(&params.text_document.uri) else {
+            return Ok(None);
+        };
+        let lines: Vec<&str> = text.lines().collect();
+        let syms: Vec<DocumentSymbol> = symbols::document_symbols(&index, &path)
+            .into_iter()
+            .map(|d| to_document_symbol(d, &lines))
+            .collect();
+        Ok(Some(DocumentSymbolResponse::Nested(syms)))
     }
 
     async fn shutdown(&self) -> tower_lsp::jsonrpc::Result<()> {
@@ -219,5 +264,50 @@ fn same_path(a: &std::path::Path, b: &std::path::Path) -> bool {
     match (a.canonicalize(), b.canonicalize()) {
         (Ok(x), Ok(y)) => x == y,
         _ => a == b,
+    }
+}
+
+fn to_completion_item(c: symbols::Completion) -> CompletionItem {
+    CompletionItem {
+        label: c.label,
+        kind: Some(completion_kind(c.kind)),
+        detail: Some(c.detail),
+        ..Default::default()
+    }
+}
+
+fn completion_kind(k: symbols::SymKind) -> CompletionItemKind {
+    match k {
+        symbols::SymKind::Field => CompletionItemKind::FIELD,
+        symbols::SymKind::Function | symbols::SymKind::Builtin => CompletionItemKind::FUNCTION,
+        symbols::SymKind::Variable => CompletionItemKind::VARIABLE,
+        symbols::SymKind::Block => CompletionItemKind::STRUCT,
+    }
+}
+
+#[allow(deprecated)] // `DocumentSymbol::deprecated` is a required (deprecated) field
+fn to_document_symbol(d: symbols::DocSym, lines: &[&str]) -> DocumentSymbol {
+    let line = d.line.saturating_sub(1);
+    let len = lines.get(line as usize).map(|l| l.chars().count() as u32).unwrap_or(0);
+    let range = Range::new(Position::new(line, 0), Position::new(line, len));
+    let children: Vec<DocumentSymbol> = d.children.into_iter().map(|c| to_document_symbol(c, lines)).collect();
+    DocumentSymbol {
+        name: d.name,
+        detail: Some(d.detail),
+        kind: symbol_kind(d.kind),
+        tags: None,
+        deprecated: None,
+        range,
+        selection_range: range,
+        children: (!children.is_empty()).then_some(children),
+    }
+}
+
+fn symbol_kind(k: symbols::SymKind) -> SymbolKind {
+    match k {
+        symbols::SymKind::Field => SymbolKind::FIELD,
+        symbols::SymKind::Function | symbols::SymKind::Builtin => SymbolKind::FUNCTION,
+        symbols::SymKind::Variable => SymbolKind::VARIABLE,
+        symbols::SymKind::Block => SymbolKind::STRUCT,
     }
 }

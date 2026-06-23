@@ -8,6 +8,7 @@
 
 use crate::assemble::{Assembled, Loc};
 use std::collections::HashMap;
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct Symbol {
@@ -29,14 +30,46 @@ pub struct SymbolIndex {
     pub functions: HashMap<String, Symbol>,
     /// Keyed by the block *instance* name (e.g. `wind`), not the block type.
     pub ubos: HashMap<String, Ubo>,
+    /// deck.gl builtins from the injected prelude — name -> signature. Hover-only:
+    /// they're stubbed in at link time, so there's no source file to jump to.
+    pub builtins: HashMap<String, String>,
 }
 
-/// A resolved hover / definition target.
+/// A resolved hover / definition target. `loc` is `None` for deck builtins, which
+/// can be hovered but have no source location to navigate to.
 #[derive(Debug, Clone)]
 pub struct Hit {
     pub detail: String,
     pub note: Option<String>,
-    pub loc: Loc,
+    pub loc: Option<Loc>,
+}
+
+/// The flavor of a symbol, mapped to LSP completion/symbol kinds in `lsp.rs`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SymKind {
+    Field,
+    Function,
+    Variable,
+    Builtin,
+    Block,
+}
+
+/// A completion candidate.
+#[derive(Debug, Clone)]
+pub struct Completion {
+    pub label: String,
+    pub detail: String,
+    pub kind: SymKind,
+}
+
+/// A document-outline entry (1-based `line` into the open document).
+#[derive(Debug, Clone)]
+pub struct DocSym {
+    pub name: String,
+    pub detail: String,
+    pub kind: SymKind,
+    pub line: u32,
+    pub children: Vec<DocSym>,
 }
 
 const QUALIFIERS: &[&str] = &["uniform", "in", "out", "attribute", "varying", "const"];
@@ -63,7 +96,34 @@ pub fn index(a: &Assembled) -> SymbolIndex {
         }
         i += 1;
     }
+    index_builtins(&mut idx);
     idx
+}
+
+/// Index the deck.gl prelude's functions as hover-only builtins.
+fn index_builtins(idx: &mut SymbolIndex) {
+    for line in crate::assemble::BUILTIN_PRELUDE.lines() {
+        if let Some((name, sig)) = builtin_signature(line.trim()) {
+            idx.builtins.entry(name).or_insert(sig);
+        }
+    }
+}
+
+/// Extract `(name, signature)` from a possibly single-line-body function like
+/// `vec2 project_pixel_size_to_clipspace(vec2 pixels) { return pixels; }`.
+fn builtin_signature(line: &str) -> Option<(String, String)> {
+    if !line.contains('{') {
+        return None; // a body / closing line, not a definition
+    }
+    let open = line.find('(')?;
+    let close = line[open..].find(')')? + open;
+    let mut it = line[..open].split_whitespace();
+    let _ret = it.next()?;
+    let name = it.next()?;
+    if it.next().is_some() || !is_ident(name) {
+        return None;
+    }
+    Some((name.to_string(), line[..=close].trim().to_string()))
 }
 
 fn loc_at(a: &Assembled, i: usize) -> Option<Loc> {
@@ -180,17 +240,103 @@ pub fn resolve(index: &SymbolIndex, line: &str, col: usize) -> Option<Hit> {
         return Some(Hit {
             detail: m.detail.clone(),
             note: Some(format!("member of `{}`", ubo.block_name)),
-            loc: m.loc.clone(),
+            loc: Some(m.loc.clone()),
         });
     }
     if let Some(s) = index.functions.get(word).or_else(|| index.globals.get(word)) {
-        return Some(Hit { detail: s.detail.clone(), note: None, loc: s.loc.clone() });
+        return Some(Hit { detail: s.detail.clone(), note: None, loc: Some(s.loc.clone()) });
     }
-    index.ubos.get(word).map(|u| Hit {
-        detail: u.detail.clone(),
-        note: None,
-        loc: u.loc.clone(),
+    if let Some(u) = index.ubos.get(word) {
+        return Some(Hit { detail: u.detail.clone(), note: None, loc: Some(u.loc.clone()) });
+    }
+    index.builtins.get(word).map(|sig| Hit {
+        detail: sig.clone(),
+        note: Some("deck.gl built-in (injected at link time)".to_string()),
+        loc: None,
     })
+}
+
+/// Completion candidates for the cursor at `col` (0-based) on `line`. After
+/// `<instance>.` it offers that block's members; otherwise the visible
+/// functions, globals, block instances, and deck builtins.
+pub fn complete(index: &SymbolIndex, line: &str, col: usize) -> Vec<Completion> {
+    let prefix = &line[..col.min(line.len())];
+    if let Some(inst) = member_context(prefix) {
+        // `instance.` — members only, and nothing if the instance is unknown
+        // (we won't pollute a non-UBO member access with globals).
+        return match index.ubos.get(inst) {
+            Some(ubo) => ubo
+                .members
+                .iter()
+                .map(|(name, s)| Completion { label: name.clone(), detail: s.detail.clone(), kind: SymKind::Field })
+                .collect(),
+            None => Vec::new(),
+        };
+    }
+    let mut out = Vec::new();
+    for (n, s) in &index.functions {
+        out.push(Completion { label: n.clone(), detail: s.detail.clone(), kind: SymKind::Function });
+    }
+    for (n, s) in &index.globals {
+        out.push(Completion { label: n.clone(), detail: s.detail.clone(), kind: SymKind::Variable });
+    }
+    for (n, u) in &index.ubos {
+        out.push(Completion { label: n.clone(), detail: u.detail.clone(), kind: SymKind::Block });
+    }
+    for (n, sig) in &index.builtins {
+        out.push(Completion { label: n.clone(), detail: sig.clone(), kind: SymKind::Builtin });
+    }
+    out
+}
+
+/// If `prefix` ends with `<instance>.<partial>`, return the instance name.
+fn member_context(prefix: &str) -> Option<&str> {
+    let b = prefix.as_bytes();
+    let mut end = prefix.len();
+    while end > 0 && is_word_byte(b[end - 1]) {
+        end -= 1; // skip the partial member being typed
+    }
+    let head = prefix[..end].strip_suffix('.')?;
+    trailing_ident(head)
+}
+
+/// Outline of the symbols *declared in* `file` (so opening a stage shader lists
+/// its own globals/functions, and opening a `*Uniforms.glsl` lists the block).
+pub fn document_symbols(index: &SymbolIndex, file: &Path) -> Vec<DocSym> {
+    let here = |loc: &Loc| same_path(&loc.path, file);
+    let mut out = Vec::new();
+    for (name, u) in &index.ubos {
+        if !here(&u.loc) {
+            continue;
+        }
+        let mut members: Vec<DocSym> = u
+            .members
+            .iter()
+            .filter(|(_, m)| here(&m.loc))
+            .map(|(mn, m)| DocSym { name: mn.clone(), detail: m.detail.clone(), kind: SymKind::Field, line: m.loc.line, children: Vec::new() })
+            .collect();
+        members.sort_by_key(|d| d.line);
+        out.push(DocSym { name: name.clone(), detail: format!("uniform {}", u.block_name), kind: SymKind::Block, line: u.loc.line, children: members });
+    }
+    for (name, s) in &index.functions {
+        if here(&s.loc) {
+            out.push(DocSym { name: name.clone(), detail: s.detail.clone(), kind: SymKind::Function, line: s.loc.line, children: Vec::new() });
+        }
+    }
+    for (name, s) in &index.globals {
+        if here(&s.loc) {
+            out.push(DocSym { name: name.clone(), detail: s.detail.clone(), kind: SymKind::Variable, line: s.loc.line, children: Vec::new() });
+        }
+    }
+    out.sort_by_key(|d| d.line);
+    out
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => a == b,
+    }
 }
 
 fn is_word_char(c: char) -> bool {
@@ -293,19 +439,73 @@ mod tests {
         let col = line.find("maxSpeed").unwrap() + 3; // mid-word
         let hit = resolve(&idx, line, col).expect("resolves wind.maxSpeed");
         assert_eq!(hit.detail, "float maxSpeed");
-        assert_eq!(hit.loc.path, PathBuf::from("/p/windUniforms.glsl"));
-        assert_eq!(hit.loc.line, 3);
+        let loc = hit.loc.as_ref().unwrap();
+        assert_eq!(loc.path, PathBuf::from("/p/windUniforms.glsl"));
+        assert_eq!(loc.line, 3);
         assert_eq!(hit.note.as_deref(), Some("member of `windUniforms`"));
     }
 
     #[test]
     fn resolves_function_and_global_and_misses_gracefully() {
         let idx = index(&fixture());
-        assert_eq!(resolve(&idx, "y = windAt(u_wind, p);", 4).unwrap().loc.line, 9);
+        assert_eq!(resolve(&idx, "y = windAt(u_wind, p);", 4).unwrap().loc.unwrap().line, 9);
         let g = resolve(&idx, "z = texture(u_wind, p);", "z = texture(".len() + 1).unwrap();
-        assert_eq!(g.loc.line, 5); // u_wind global
+        assert_eq!(g.loc.unwrap().line, 5); // u_wind global
         // Cursor on whitespace, and an unknown member, both resolve to nothing.
         assert!(resolve(&idx, "  a + b", 3).is_none());
         assert!(resolve(&idx, "wind.nope", 6).is_none());
+    }
+
+    #[test]
+    fn deck_builtin_is_hover_only() {
+        let idx = index(&fixture());
+        let line = "  vec4 c = project_position_to_clipspace(a, b, d);";
+        let col = line.find("project_position_to_clipspace").unwrap() + 5;
+        let hit = resolve(&idx, line, col).expect("builtin resolves");
+        assert!(hit.detail.starts_with("vec4 project_position_to_clipspace("));
+        assert!(hit.loc.is_none()); // no source file -> no go-to-definition
+        assert!(hit.note.as_deref().unwrap().contains("deck.gl"));
+    }
+
+    #[test]
+    fn completes_members_after_dot() {
+        let idx = index(&fixture());
+        let labels: Vec<_> = complete(&idx, "  x = wind.", "  x = wind.".len())
+            .into_iter()
+            .map(|c| c.label)
+            .collect();
+        assert!(labels.contains(&"uMin".to_string()));
+        assert!(labels.contains(&"maxSpeed".to_string()));
+        // Only members — no globals/functions leak into a member completion.
+        assert!(!labels.contains(&"windAt".to_string()));
+        // A partial member still completes from the instance.
+        assert!(complete(&idx, "x = wind.max", "x = wind.max".len()).iter().any(|c| c.label == "maxSpeed"));
+        // Unknown instance -> nothing (don't guess).
+        assert!(complete(&idx, "foo.", "foo.".len()).is_empty());
+    }
+
+    #[test]
+    fn general_completion_lists_visible_symbols() {
+        let idx = index(&fixture());
+        let labels: Vec<_> = complete(&idx, "  ", 2).into_iter().map(|c| c.label).collect();
+        for want in ["windAt", "u_wind", "wind", "project_position"] {
+            assert!(labels.contains(&want.to_string()), "missing {want}");
+        }
+    }
+
+    #[test]
+    fn document_symbols_are_scoped_to_the_file() {
+        let idx = index(&fixture());
+        let draw = document_symbols(&idx, Path::new("/p/draw.vert.glsl"));
+        let names: Vec<_> = draw.iter().map(|d| d.name.as_str()).collect();
+        assert!(names.contains(&"windAt") && names.contains(&"u_wind"));
+        // The wind block lives in windUniforms.glsl, not here.
+        assert!(!names.contains(&"wind"));
+        // Outline is ordered by line.
+        assert!(draw.windows(2).all(|w| w[0].line <= w[1].line));
+
+        let module = document_symbols(&idx, Path::new("/p/windUniforms.glsl"));
+        let wind = module.iter().find(|d| d.name == "wind").expect("wind block");
+        assert!(wind.children.iter().any(|c| c.name == "maxSpeed"));
     }
 }
