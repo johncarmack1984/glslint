@@ -29,6 +29,10 @@ modules  = ["src/shaders/windUniforms.glsl", "src/shaders/blitUniforms.glsl"]
 builtin_prelude = true
 ```
 
+## Editor integration
+
+A minimal VS Code / Cursor extension lives in [`editors/vscode/`](editors/vscode/) — it's a thin LSP client that launches `glslint lsp` and shows its diagnostics on GLSL files. See that folder's README to run it (`F5` dev host, or `vsce package`). Point `glslint.path` at the built binary (e.g. `target/debug/glslint`) if it isn't on the editor's PATH.
+
 ## How it works
 
 - `assemble.rs` — hoists the target's own `#version` to the top, injects default precision (so the deck prelude's `float`/`vec*` are well-formed before the shader's own `precision` line), then the prelude + module blocks, recording a per-line map back to the originals. Source is passed through **verbatim** — glslangValidator validates GLSL ES natively, so there are no source transforms. Stage is inferred from the filename (`*.vert.glsl` / `*.frag.glsl` / `*.comp.glsl`); bare module fragments are wrapped in a dummy shell for syntax-only checking.

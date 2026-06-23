@@ -1,0 +1,41 @@
+{
+  "name": "glslint",
+  "displayName": "glslint",
+  "description": "luma.gl/deck.gl-aware GLSL diagnostics — an LSP client for the glslint binary.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "private": true,
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Linters",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:glsl"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "glsl",
+        "aliases": ["GLSL", "glsl"],
+        "extensions": [".glsl", ".vert", ".frag", ".comp", ".vs", ".fs"]
+      }
+    ],
+    "configuration": {
+      "title": "glslint",
+      "properties": {
+        "glslint.path": {
+          "type": "string",
+          "default": "glslint",
+          "description": "Path to the glslint executable. Set an absolute path (e.g. .../target/debug/glslint), or install it on PATH with `cargo install --path .`."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}
