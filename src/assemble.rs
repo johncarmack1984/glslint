@@ -6,8 +6,26 @@
 //! diagnostics land where the author can act on them.
 
 use crate::config::Config;
-use naga::ShaderStage;
 use std::path::{Path, PathBuf};
+
+/// Shader stage, inferred from the filename. Maps to glslangValidator's `-S` arg.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stage {
+    Vertex,
+    Fragment,
+    Compute,
+}
+
+impl Stage {
+    /// The `-S <stage>` argument glslangValidator expects.
+    pub fn glslang_stage(self) -> &'static str {
+        match self {
+            Stage::Vertex => "vert",
+            Stage::Fragment => "frag",
+            Stage::Compute => "comp",
+        }
+    }
+}
 
 /// deck.gl `project32` stubs. Bodies are trivial — only the signatures matter
 /// for type/semantic checking of the consumer shader.
@@ -20,11 +38,16 @@ vec3 project_position(vec3 position) { return position; }
 vec4 project_common_position_to_clipspace(vec4 position) { return position; }
 "#;
 
-/// naga's GLSL frontend only accepts desktop *core* (versions 440/450/460), not
-/// GLSL ES. WebGL2 shaders are `#version 300 es`, whose feature set the shaders
-/// here use is a subset of 4.60 core — so we emit a core version directive and
-/// normalize the ES-only spellings below.
-const CORE_VERSION: &str = "#version 460 core";
+/// Used when the target has no `#version` of its own. WebGL2/luma shaders are
+/// GLSL ES 3.00; glslangValidator validates that profile natively (combined
+/// samplers, combined-sampler function params, and all) with no source rewrites.
+const DEFAULT_VERSION: &str = "#version 300 es";
+
+/// Injected right after the (hoisted) `#version`, before any prelude. GLSL ES
+/// fragment shaders have no default `float` precision, and the deck prelude stubs
+/// reference `float`/`vec*` ahead of the target's own `precision` statement — so
+/// we set defaults up front. Re-declaring them later (as the shaders do) is legal.
+const DEFAULT_PRECISION: &str = "precision highp float;\nprecision highp int;";
 
 /// Where an assembled line came from. `line` is 1-based into `path`.
 #[derive(Debug, Clone)]
@@ -35,7 +58,7 @@ pub struct Loc {
 
 pub struct Assembled {
     pub source: String,
-    pub stage: ShaderStage,
+    pub stage: Stage,
     /// One entry per assembled line: assembled line `i+1` -> `map[i]`. `None` for
     /// synthetic/injected-prelude lines we own (errors there are dropped).
     pub map: Vec<Option<Loc>>,
@@ -71,54 +94,24 @@ impl Builder {
             self.push(l.to_string(), None);
         }
     }
-    fn finish(mut self, stage: ShaderStage, target: &Path, note: Option<&'static str>) -> Assembled {
-        normalize_core(&mut self.lines);
+    fn finish(self, stage: Stage, target: &Path, note: Option<&'static str>) -> Assembled {
         let mut source = self.lines.join("\n");
         source.push('\n');
         Assembled { source, stage, map: self.map, target: target.to_path_buf(), note }
     }
 }
 
-/// Rewrite ES-3.00 spellings naga's core frontend can't ingest, preserving line
-/// count so the diagnostic map stays valid.
-fn normalize_core(lines: &mut [String]) {
-    let mut binding = 0u32;
-    for line in lines.iter_mut() {
-        let trimmed = line.trim();
-        // ES `precision ...;` statements are no-ops in core and unsupported by
-        // naga — blank the line (keeping it for the line map).
-        if trimmed.starts_with("precision ") && trimmed.ends_with(';') {
-            line.clear();
-            continue;
-        }
-        // Inline precision qualifiers are equally redundant in core.
-        for q in ["highp ", "mediump ", "lowp "] {
-            if line.contains(q) {
-                *line = line.replace(q, "");
-            }
-        }
-        // naga(core) demands an explicit binding on every interface block.
-        for layout in ["layout(std140)", "layout(std430)"] {
-            if line.contains(layout) && !line.contains("binding") {
-                let bound = layout.replace(')', &format!(", binding={binding})"));
-                *line = line.replace(layout, &bound);
-                binding += 1;
-            }
-        }
-    }
-}
-
 /// Infer the shader stage from the filename. `None` => not a stage shader (a
 /// module fragment like `windUniforms.glsl`), which we wrap for syntax-checking.
-pub fn detect_stage(path: &Path) -> Option<ShaderStage> {
+pub fn detect_stage(path: &Path) -> Option<Stage> {
     let name = path.file_name()?.to_str()?;
     let n = name.to_ascii_lowercase();
     if n.contains(".vert.") || n.ends_with(".vert") || n.ends_with(".vs") {
-        Some(ShaderStage::Vertex)
+        Some(Stage::Vertex)
     } else if n.contains(".frag.") || n.ends_with(".frag") || n.ends_with(".fs") {
-        Some(ShaderStage::Fragment)
+        Some(Stage::Fragment)
     } else if n.contains(".comp.") || n.ends_with(".comp") {
-        Some(ShaderStage::Compute)
+        Some(Stage::Compute)
     } else {
         None
     }
@@ -131,14 +124,23 @@ pub fn assemble(target: &Path, source: &str, config: &Config) -> Assembled {
     }
 }
 
-fn assemble_stage(target: &Path, source: &str, config: &Config, stage: ShaderStage) -> Assembled {
+fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) -> Assembled {
     let mut b = Builder::new();
     let lines: Vec<&str> = source.lines().collect();
 
-    // Emit a core version directive first (naga rejects `#version 300 es`); the
-    // original directive is dropped from the body below.
+    // A `#version` directive must precede all code, so hoist the target's own to
+    // the top (it's dropped from the body below) and map it back to its real line
+    // so a version error still points home. Default it when absent. Default
+    // precision follows, before any prelude — see DEFAULT_PRECISION.
     let vidx = lines.iter().position(|l| l.trim_start().starts_with("#version"));
-    b.push_synthetic(CORE_VERSION);
+    match vidx {
+        Some(i) => b.push(
+            lines[i].to_string(),
+            Some(Loc { path: target.to_path_buf(), line: i as u32 + 1 }),
+        ),
+        None => b.push_synthetic(DEFAULT_VERSION),
+    }
+    b.push_synthetic(DEFAULT_PRECISION);
 
     if config.use_builtin_prelude {
         b.push_synthetic(BUILTIN_PRELUDE);
@@ -174,12 +176,13 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: ShaderSta
 /// a real syntax/type pass.
 fn wrap_fragment(target: &Path, source: &str) -> Assembled {
     let mut b = Builder::new();
-    b.push_synthetic(CORE_VERSION);
+    b.push_synthetic(DEFAULT_VERSION);
+    b.push_synthetic(DEFAULT_PRECISION);
     for (i, l) in source.lines().enumerate() {
         b.push(l.to_string(), Some(Loc { path: target.to_path_buf(), line: i as u32 + 1 }));
     }
     b.push_synthetic("void main() {}");
-    b.finish(ShaderStage::Fragment, target, Some("module fragment (syntax-only)"))
+    b.finish(Stage::Fragment, target, Some("module fragment (syntax-only)"))
 }
 
 /// True if two paths point at the same file. Canonicalize when possible; fall

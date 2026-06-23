@@ -2,8 +2,9 @@
 //!
 //! Stock GLSL tools choke on shaders that reference module-injected symbols
 //! (`wind.*`, `project_position_to_clipspace`). glslint assembles the modules +
-//! deck builtins into a complete `#version 300 es` unit, validates it with naga
-//! (in-process), and maps diagnostics back to the original files.
+//! deck builtins into a complete `#version 300 es` unit, validates it with the
+//! Khronos glslangValidator reference compiler, and maps diagnostics back to the
+//! original files.
 //!
 //!   glslint check FILE...   # one-shot validation (exit 1 on errors)
 //!   glslint lsp             # language server over stdio (publishDiagnostics)

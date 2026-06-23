@@ -1,6 +1,6 @@
 //! Lint passes that run on the original source text — checks beyond "does it
-//! compile", in the spirit of clippy/biome. naga gives us the spec-conformance
-//! pass; this is where opinionated rules live.
+//! compile", in the spirit of clippy/biome. glslangValidator gives us the
+//! spec-conformance pass; this is where opinionated rules live.
 //!
 //! Rules here must be zero-false-positive: they only fire on the author's own
 //! lines (never injected code) and on patterns that are unambiguously wrong.
