@@ -34,7 +34,7 @@ builtin_prelude = true
 - `assemble.rs` — hoists the target's own `#version` to the top, injects default precision (so the deck prelude's `float`/`vec*` are well-formed before the shader's own `precision` line), then the prelude + module blocks, recording a per-line map back to the originals. Source is passed through **verbatim** — glslangValidator validates GLSL ES natively, so there are no source transforms. Stage is inferred from the filename (`*.vert.glsl` / `*.frag.glsl` / `*.comp.glsl`); bare module fragments are wrapped in a dummy shell for syntax-only checking.
 - `check.rs` — runs `glslangValidator --stdin -S <stage>` over the assembled unit, parses its `ERROR: 0:LINE:` / `WARNING:` output, collapses glslang's per-line error cascades to the root cause, and translates each line back to the original file:line via the map (refining the column from the offending token when glslang names one). **This mapping is the hard part and it works** — errors land on `draw.vert.glsl:4`, and an error inside an injected module lands on `windUniforms.glsl:3`, not the assembled unit.
 - `lints.rs` — opinionated, zero-false-positive rules (currently: GLSL ES 1.00 builtins/qualifiers removed in `#version 300 es`). Runs alongside the validator, so a `varying` declaration draws both the raw glslang error and a friendlier migration hint.
-- `lsp.rs` — tower-lsp; `publishDiagnostics` on open/change/save, filtered to the edited document.
+- `lsp.rs` — tower-lsp; `publishDiagnostics` on open/change/save, filtered to the edited document. Edits are debounced and the (subprocess-spawning) check runs off the async runtime, with a per-document generation guard so a slow check can't clobber a newer edit.
 
 ## Why glslangValidator
 
