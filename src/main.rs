@@ -15,6 +15,7 @@ mod config;
 mod diagnostics;
 mod lints;
 mod lsp;
+mod symbols;
 
 use diagnostics::{print_diag, Severity};
 use std::path::Path;

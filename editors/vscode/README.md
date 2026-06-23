@@ -33,3 +33,5 @@ Open `draw.vert.glsl` and change a uniform-block member to a typo, e.g. `wind.ma
 > `'maxSpeeed' : no such field in structure 'wind'`
 
 That's the point of glslint: `wind` is declared in a *separate* `windUniforms.glsl` module that stock GLSL tools never see, so only glslint can validate the member access. Diagnostics are debounced and map back to the exact `file:line:col`, including into the injected module files when the error originates there.
+
+**Hover** a uniform-block member like `wind.uMin` to see its type, and **cmd-click** (Go to Definition) to jump straight into `windUniforms.glsl` — the cross-module navigation that stock GLSL tooling can't do. Hover/jump also work for top-level `uniform`/`in`/`out` declarations and function definitions.

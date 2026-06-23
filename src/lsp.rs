@@ -2,7 +2,9 @@
 //! and publish diagnostics. No completion/hover yet — diagnostics are the value.
 
 use crate::check::check_source;
+use crate::config::Config;
 use crate::diagnostics::{Diag, Severity};
+use crate::{assemble, symbols};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -83,6 +85,19 @@ impl Backend {
     fn superseded(&self, uri: &Url, generation: u64) -> bool {
         self.generations.lock().unwrap().get(uri).copied() != Some(generation)
     }
+
+    /// Resolve the symbol under `pos` to a hover/definition hit. Assembles the
+    /// document (cheap — no glslang subprocess) and scans it for symbols. Position
+    /// columns are treated as byte offsets, correct for ASCII GLSL.
+    fn resolve_at(&self, uri: &Url, pos: Position) -> Option<symbols::Hit> {
+        let text = self.docs.lock().unwrap().get(uri)?.clone();
+        let path = uri.to_file_path().ok()?;
+        let config = Config::resolve_for(&path);
+        let assembled = assemble::assemble(&path, &text, &config);
+        let index = symbols::index(&assembled);
+        let line = text.lines().nth(pos.line as usize)?;
+        symbols::resolve(&index, line, pos.character as usize)
+    }
 }
 
 #[tower_lsp::async_trait]
@@ -95,6 +110,8 @@ impl LanguageServer for Backend {
             }),
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
+                definition_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
         })
@@ -131,6 +148,33 @@ impl LanguageServer for Backend {
         self.docs.lock().unwrap().remove(&uri);
         // Drop the generation too, so any in-flight refresh for this doc bails.
         self.generations.lock().unwrap().remove(&uri);
+    }
+
+    async fn hover(&self, params: HoverParams) -> tower_lsp::jsonrpc::Result<Option<Hover>> {
+        let p = params.text_document_position_params;
+        Ok(self.resolve_at(&p.text_document.uri, p.position).map(|hit| {
+            let mut value = format!("```glsl\n{}\n```", hit.detail);
+            if let Some(note) = hit.note {
+                value.push_str(&format!("\n\n{note}"));
+            }
+            Hover {
+                contents: HoverContents::Markup(MarkupContent { kind: MarkupKind::Markdown, value }),
+                range: None,
+            }
+        }))
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> tower_lsp::jsonrpc::Result<Option<GotoDefinitionResponse>> {
+        let p = params.text_document_position_params;
+        Ok(self.resolve_at(&p.text_document.uri, p.position).and_then(|hit| {
+            let uri = Url::from_file_path(&hit.loc.path).ok()?;
+            let line = hit.loc.line.saturating_sub(1);
+            let range = Range::new(Position::new(line, 0), Position::new(line, 0));
+            Some(GotoDefinitionResponse::Scalar(Location { uri, range }))
+        }))
     }
 
     async fn shutdown(&self) -> tower_lsp::jsonrpc::Result<()> {
