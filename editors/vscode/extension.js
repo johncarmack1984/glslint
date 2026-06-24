@@ -14,7 +14,7 @@ const fs = require("fs");
 const https = require("https");
 
 const REPO = "johncarmack1984/glslint";
-const VERSION = "v0.1.0"; // the release providing the prebuilt binaries
+const VERSION = "v0.1.1"; // the release providing the prebuilt binaries
 
 let client;
 
