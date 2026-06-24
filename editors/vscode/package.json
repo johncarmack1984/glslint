@@ -3,8 +3,25 @@
   "displayName": "glslint",
   "description": "luma.gl/deck.gl-aware GLSL diagnostics — an LSP client for the glslint binary.",
   "version": "0.2.0",
-  "publisher": "local",
-  "private": true,
+  "publisher": "johncarmack1984",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/johncarmack1984/glslint.git",
+    "directory": "editors/vscode"
+  },
+  "homepage": "https://github.com/johncarmack1984/glslint#readme",
+  "bugs": {
+    "url": "https://github.com/johncarmack1984/glslint/issues"
+  },
+  "keywords": [
+    "glsl",
+    "shader",
+    "deck.gl",
+    "luma.gl",
+    "webgl",
+    "lsp"
+  ],
   "engines": {
     "vscode": "^1.75.0"
   },
