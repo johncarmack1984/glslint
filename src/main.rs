@@ -13,6 +13,7 @@ mod assemble;
 mod check;
 mod config;
 mod deck;
+mod derive;
 mod diagnostics;
 mod drift;
 mod lints;
