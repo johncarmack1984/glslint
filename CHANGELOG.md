@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/johncarmack1984/glslint/compare/v0.1.3...v0.2.0) (2026-06-24)
+
+
+### Features
+
+* auto-derive shader/module bindings from new Model() calls ([#4](https://github.com/johncarmack1984/glslint/issues/4)) ([196b702](https://github.com/johncarmack1984/glslint/commit/196b7020c02a47224bbd120da14dda3e2d259111))
+
 ## [0.1.3](https://github.com/johncarmack1984/glslint/compare/v0.1.2...v0.1.3) (2026-06-24)
 
 

@@ -2,7 +2,7 @@
   "name": "glslint",
   "displayName": "glslint",
   "description": "luma.gl/deck.gl-aware GLSL diagnostics — an LSP client for the glslint binary.",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "publisher": "local",
   "private": true,
   "engines": {
