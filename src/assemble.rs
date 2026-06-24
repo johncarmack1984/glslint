@@ -149,7 +149,14 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
     b.push_synthetic(DEFAULT_PRECISION);
 
     if config.use_builtin_prelude {
-        b.push_synthetic(BUILTIN_PRELUDE);
+        // Prefer deck's real project functions from node_modules (extracted as
+        // empty-body stubs); fall back to the baked-in 4-function stub.
+        let fns = crate::deck::project_fns(target.parent().unwrap_or(Path::new(".")));
+        if fns.is_empty() {
+            b.push_synthetic(BUILTIN_PRELUDE);
+        } else {
+            b.push_synthetic(&crate::deck::stubs(&fns));
+        }
     }
     for p in &config.preludes {
         if let Ok(c) = std::fs::read_to_string(p) {

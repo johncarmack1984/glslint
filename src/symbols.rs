@@ -16,11 +16,13 @@ pub struct Symbol {
     pub loc: Loc,
 }
 
-/// A built-in function — deck.gl prelude or core GLSL. Hover/completion only.
+/// A built-in function — deck.gl prelude or core GLSL. `loc` is set for deck
+/// functions resolved from node_modules (navigable), `None` otherwise.
 #[derive(Debug, Clone)]
 pub struct Builtin {
     pub signature: String,
     pub origin: &'static str,
+    pub loc: Option<Loc>,
 }
 
 #[derive(Debug, Clone)]
@@ -103,18 +105,35 @@ pub fn index(a: &Assembled) -> SymbolIndex {
         }
         i += 1;
     }
-    index_builtins(&mut idx);
+    index_deck_builtins(&mut idx, a);
     index_glsl_builtins(&mut idx);
     idx
 }
 
-/// Index the deck.gl prelude's functions as hover-only builtins.
-fn index_builtins(idx: &mut SymbolIndex) {
-    for line in crate::assemble::BUILTIN_PRELUDE.lines() {
-        if let Some((name, sig)) = builtin_signature(line.trim()) {
-            idx.builtins
-                .entry(name)
-                .or_insert(Builtin { signature: sig, origin: "deck.gl built-in (injected at link time)" });
+/// Index deck.gl's project builtins. Prefer the real functions resolved from
+/// node_modules (carrying source locations, so hover shows the true signature and
+/// go-to-definition jumps into the deck source); fall back to the baked-in stub
+/// (hover-only) when deck isn't installed.
+fn index_deck_builtins(idx: &mut SymbolIndex, a: &Assembled) {
+    let dir = a.target.parent().unwrap_or(Path::new("."));
+    let fns = crate::deck::project_fns(dir);
+    if fns.is_empty() {
+        for line in crate::assemble::BUILTIN_PRELUDE.lines() {
+            if let Some((name, sig)) = builtin_signature(line.trim()) {
+                idx.builtins.entry(name).or_insert(Builtin {
+                    signature: sig,
+                    origin: "deck.gl built-in (injected at link time)",
+                    loc: None,
+                });
+            }
+        }
+    } else {
+        for f in fns {
+            idx.builtins.entry(f.name).or_insert(Builtin {
+                signature: f.signature,
+                origin: "deck.gl built-in",
+                loc: Some(f.loc),
+            });
         }
     }
 }
@@ -125,7 +144,7 @@ fn index_glsl_builtins(idx: &mut SymbolIndex) {
     for (name, sig) in GLSL_BUILTINS {
         idx.builtins
             .entry((*name).to_string())
-            .or_insert(Builtin { signature: (*sig).to_string(), origin: "GLSL ES built-in" });
+            .or_insert(Builtin { signature: (*sig).to_string(), origin: "GLSL ES built-in", loc: None });
     }
 }
 
@@ -305,7 +324,7 @@ pub fn resolve(index: &SymbolIndex, line: &str, col: usize) -> Option<Hit> {
     index.builtins.get(word).map(|b| Hit {
         detail: b.signature.clone(),
         note: Some(b.origin.to_string()),
-        loc: None,
+        loc: b.loc.clone(),
     })
 }
 
