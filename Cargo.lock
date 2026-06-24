@@ -181,7 +181,7 @@ dependencies = [
 
 [[package]]
 name = "glslint"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "serde",
