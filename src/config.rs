@@ -102,6 +102,16 @@ impl Config {
             }
         }
 
+        // No glsl-lsp.toml — try to auto-derive the bindings from the JS
+        // `new Model({ modules })` calls before falling back to sibling discovery.
+        if let Some(d) = crate::derive::derive(file) {
+            return Config {
+                preludes: Vec::new(),
+                modules: d.modules,
+                use_builtin_prelude: d.use_builtin_prelude,
+            };
+        }
+
         // Zero-config: builtin deck/luma prelude + auto-discovered sibling UBO
         // fragments (`*Uniforms.glsl`) next to the target.
         Config {

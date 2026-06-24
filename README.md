@@ -44,7 +44,7 @@ match   = "blit.*.glsl"
 modules = ["blitUniforms"]
 ```
 
-Without `[[shader]]` bindings it accepts a legacy global list (`preludes` / `modules` / `builtin_prelude`) applied to every shader; with no `glsl-lsp.toml` at all it falls back to zero-config sibling discovery.
+Without `[[shader]]` bindings it accepts a legacy global list (`preludes` / `modules` / `builtin_prelude`) applied to every shader. With **no `glsl-lsp.toml` at all**, it first tries to auto-derive each shader's modules from the project's JS/TS `new Model({ modules })` calls (see `derive.rs`), and only falls back to zero-config sibling discovery if that finds nothing.
 
 ## Editor integration
 
@@ -58,6 +58,7 @@ A minimal VS Code / Cursor extension lives in [`editors/vscode/`](editors/vscode
 - `drift.rs` — when a module declares a `types` JS file (see config), cross-checks its GLSL UBO block against that file's `uniformTypes` and warns on drift (a member on one side only, or a type mismatch). luma keeps these two in sync by hand; nothing else sees both at once. Conservative — silent unless it can confidently read both sides.
 - `symbols.rs` — a line-based symbol scanner over the assembled unit (UBO/interface blocks, top-level `uniform`/`in`/`out`, function definitions, deck builtins), each symbol carrying its original `Loc`. Powers hover, go-to-definition, completion, and the document outline — including the cross-module jump: `wind.uMin` in `draw.vert.glsl` resolves to its declaration in `windUniforms.glsl`.
 - `deck.rs` — resolves deck.gl's `project` builtins from `node_modules` instead of a hand-written stub. deck ships the module GLSL as a JS template whose bodies interpolate constants and depend on a `geometry`/`project` UBO, so the bodies can't be spliced; but the function *signatures* are clean GLSL. So it extracts the real signatures, generates empty-body stubs so any project function validates (no dependency graph needed), and records each declaration site — so hover shows the true signature and go-to-definition jumps into the deck source. Falls back to a baked-in 4-function stub when deck isn't installed.
+- `derive.rs` — when there's no `glsl-lsp.toml`, recovers each shader's module bindings the way luma already encodes them: by reading the project's `new Model({ vs, fs, modules })` calls. It finds the shader's `?raw` import, the `Model` call that references it, and follows each module identifier to its GLSL source (a local module's `vs:` import, e.g. `windUniforms` → `windUniforms.glsl`) or to the deck builtins (a package import like `project32`). A heuristic scan, not a JS parser — handles multi-line imports, conservative enough to fall back to sibling discovery when it can't confidently resolve. The payoff: deck-wind-layer's shaders validate with their faithful per-shader modules and **no config file** — `blit` bound to `blitUniforms` only, `draw` to `project32` + `windUniforms`.
 - `lsp.rs` — tower-lsp; `publishDiagnostics` on open/change/save, plus hover, go-to-definition, completion (`wind.` → member list), and document symbols, filtered to the edited document. Edits are debounced and the (subprocess-spawning) check runs off the async runtime, with a per-document generation guard so a slow check can't clobber a newer edit.
 
 ## Why glslangValidator
