@@ -2,7 +2,7 @@
   "name": "glslint",
   "displayName": "glslint",
   "description": "luma.gl/deck.gl-aware GLSL diagnostics — an LSP client for the glslint binary.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "local",
   "private": true,
   "engines": {
@@ -20,8 +20,18 @@
     "languages": [
       {
         "id": "glsl",
-        "aliases": ["GLSL", "glsl"],
-        "extensions": [".glsl", ".vert", ".frag", ".comp", ".vs", ".fs"],
+        "aliases": [
+          "GLSL",
+          "glsl"
+        ],
+        "extensions": [
+          ".glsl",
+          ".vert",
+          ".frag",
+          ".comp",
+          ".vs",
+          ".fs"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
