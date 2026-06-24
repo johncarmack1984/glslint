@@ -14,7 +14,9 @@ const fs = require("fs");
 const https = require("https");
 
 const REPO = "johncarmack1984/glslint";
-const VERSION = "v0.1.1"; // the release providing the prebuilt binaries
+// Binary version to download: this extension's own version (release-please keeps
+// package.json in lockstep with the crate), prefixed with `v` for the release tag.
+const VERSION = `v${require("./package.json").version}`;
 
 let client;
 
