@@ -142,9 +142,11 @@ fn index_deck_builtins(idx: &mut SymbolIndex, a: &Assembled) {
 /// Signatures use the spec's shorthand (`genType`, `gvec4`, `sampler`).
 fn index_glsl_builtins(idx: &mut SymbolIndex) {
     for (name, sig) in GLSL_BUILTINS {
-        idx.builtins
-            .entry((*name).to_string())
-            .or_insert(Builtin { signature: (*sig).to_string(), origin: "GLSL ES built-in", loc: None });
+        idx.builtins.entry((*name).to_string()).or_insert(Builtin {
+            signature: (*sig).to_string(),
+            origin: "GLSL ES built-in",
+            loc: None,
+        });
     }
 }
 
@@ -208,7 +210,10 @@ fn block_start(trimmed: &str) -> Option<String> {
     if !trimmed.ends_with('{') {
         return None;
     }
-    let rest = trimmed.strip_prefix("layout").map(str::trim_start).unwrap_or(trimmed);
+    let rest = trimmed
+        .strip_prefix("layout")
+        .map(str::trim_start)
+        .unwrap_or(trimmed);
     let rest = if let Some(after_paren) = rest.strip_prefix('(') {
         &after_paren[after_paren.find(')')? + 1..]
     } else {
@@ -225,28 +230,40 @@ fn block_start(trimmed: &str) -> Option<String> {
 
 /// Consume a block's members + its `} instance;` line, recording the UBO. Returns
 /// the index of the first line after the block.
-fn scan_block(a: &Assembled, lines: &[&str], start: usize, block_name: String, idx: &mut SymbolIndex) -> usize {
+fn scan_block(
+    a: &Assembled,
+    lines: &[&str],
+    start: usize,
+    block_name: String,
+    idx: &mut SymbolIndex,
+) -> usize {
     let mut members = HashMap::new();
     let mut j = start + 1;
     while j < lines.len() && !lines[j].contains('}') {
         if let (Some((ty, name)), Some(loc)) = (member_decl(lines[j].trim()), loc_at(a, j)) {
-            members.insert(name.clone(), Symbol { detail: format!("{ty} {name}"), loc });
+            members.insert(
+                name.clone(),
+                Symbol {
+                    detail: format!("{ty} {name}"),
+                    loc,
+                },
+            );
         }
         j += 1;
     }
     if j < lines.len() {
-        if let Some(instance) = block_end(lines[j].trim()) {
-            if let Some(loc) = loc_at(a, start).or_else(|| loc_at(a, j)) {
-                idx.ubos.insert(
-                    instance.clone(),
-                    Ubo {
-                        detail: format!("uniform {block_name} {{ … }} {instance}"),
-                        block_name,
-                        loc,
-                        members,
-                    },
-                );
-            }
+        if let Some(instance) = block_end(lines[j].trim())
+            && let Some(loc) = loc_at(a, start).or_else(|| loc_at(a, j))
+        {
+            idx.ubos.insert(
+                instance.clone(),
+                Ubo {
+                    detail: format!("uniform {block_name} {{ … }} {instance}"),
+                    block_name,
+                    loc,
+                    members,
+                },
+            );
         }
         return j + 1;
     }
@@ -280,7 +297,12 @@ fn global_decl(trimmed: &str) -> Option<(String, String)> {
         return None;
     }
     let lhs = body.split('=').next()?;
-    let name = lhs.split_whitespace().last()?.split('[').next()?.to_string();
+    let name = lhs
+        .split_whitespace()
+        .last()?
+        .split('[')
+        .next()?
+        .to_string();
     is_ident(&name).then_some((name, body.trim().to_string()))
 }
 
@@ -315,11 +337,23 @@ pub fn resolve(index: &SymbolIndex, line: &str, col: usize) -> Option<Hit> {
             loc: Some(m.loc.clone()),
         });
     }
-    if let Some(s) = index.functions.get(word).or_else(|| index.globals.get(word)) {
-        return Some(Hit { detail: s.detail.clone(), note: None, loc: Some(s.loc.clone()) });
+    if let Some(s) = index
+        .functions
+        .get(word)
+        .or_else(|| index.globals.get(word))
+    {
+        return Some(Hit {
+            detail: s.detail.clone(),
+            note: None,
+            loc: Some(s.loc.clone()),
+        });
     }
     if let Some(u) = index.ubos.get(word) {
-        return Some(Hit { detail: u.detail.clone(), note: None, loc: Some(u.loc.clone()) });
+        return Some(Hit {
+            detail: u.detail.clone(),
+            note: None,
+            loc: Some(u.loc.clone()),
+        });
     }
     index.builtins.get(word).map(|b| Hit {
         detail: b.signature.clone(),
@@ -340,23 +374,43 @@ pub fn complete(index: &SymbolIndex, line: &str, col: usize) -> Vec<Completion> 
             Some(ubo) => ubo
                 .members
                 .iter()
-                .map(|(name, s)| Completion { label: name.clone(), detail: s.detail.clone(), kind: SymKind::Field })
+                .map(|(name, s)| Completion {
+                    label: name.clone(),
+                    detail: s.detail.clone(),
+                    kind: SymKind::Field,
+                })
                 .collect(),
             None => Vec::new(),
         };
     }
     let mut out = Vec::new();
     for (n, s) in &index.functions {
-        out.push(Completion { label: n.clone(), detail: s.detail.clone(), kind: SymKind::Function });
+        out.push(Completion {
+            label: n.clone(),
+            detail: s.detail.clone(),
+            kind: SymKind::Function,
+        });
     }
     for (n, s) in &index.globals {
-        out.push(Completion { label: n.clone(), detail: s.detail.clone(), kind: SymKind::Variable });
+        out.push(Completion {
+            label: n.clone(),
+            detail: s.detail.clone(),
+            kind: SymKind::Variable,
+        });
     }
     for (n, u) in &index.ubos {
-        out.push(Completion { label: n.clone(), detail: u.detail.clone(), kind: SymKind::Block });
+        out.push(Completion {
+            label: n.clone(),
+            detail: u.detail.clone(),
+            kind: SymKind::Block,
+        });
     }
     for (n, b) in &index.builtins {
-        out.push(Completion { label: n.clone(), detail: b.signature.clone(), kind: SymKind::Builtin });
+        out.push(Completion {
+            label: n.clone(),
+            detail: b.signature.clone(),
+            kind: SymKind::Builtin,
+        });
     }
     out
 }
@@ -385,19 +439,43 @@ pub fn document_symbols(index: &SymbolIndex, file: &Path) -> Vec<DocSym> {
             .members
             .iter()
             .filter(|(_, m)| here(&m.loc))
-            .map(|(mn, m)| DocSym { name: mn.clone(), detail: m.detail.clone(), kind: SymKind::Field, line: m.loc.line, children: Vec::new() })
+            .map(|(mn, m)| DocSym {
+                name: mn.clone(),
+                detail: m.detail.clone(),
+                kind: SymKind::Field,
+                line: m.loc.line,
+                children: Vec::new(),
+            })
             .collect();
         members.sort_by_key(|d| d.line);
-        out.push(DocSym { name: name.clone(), detail: format!("uniform {}", u.block_name), kind: SymKind::Block, line: u.loc.line, children: members });
+        out.push(DocSym {
+            name: name.clone(),
+            detail: format!("uniform {}", u.block_name),
+            kind: SymKind::Block,
+            line: u.loc.line,
+            children: members,
+        });
     }
     for (name, s) in &index.functions {
         if here(&s.loc) {
-            out.push(DocSym { name: name.clone(), detail: s.detail.clone(), kind: SymKind::Function, line: s.loc.line, children: Vec::new() });
+            out.push(DocSym {
+                name: name.clone(),
+                detail: s.detail.clone(),
+                kind: SymKind::Function,
+                line: s.loc.line,
+                children: Vec::new(),
+            });
         }
     }
     for (name, s) in &index.globals {
         if here(&s.loc) {
-            out.push(DocSym { name: name.clone(), detail: s.detail.clone(), kind: SymKind::Variable, line: s.loc.line, children: Vec::new() });
+            out.push(DocSym {
+                name: name.clone(),
+                detail: s.detail.clone(),
+                kind: SymKind::Variable,
+                line: s.loc.line,
+                children: Vec::new(),
+            });
         }
     }
     out.sort_by_key(|d| d.line);
@@ -419,7 +497,8 @@ fn is_word_byte(b: u8) -> bool {
 }
 fn is_ident(s: &str) -> bool {
     let mut cs = s.chars();
-    matches!(cs.next(), Some(c) if c.is_ascii_alphabetic() || c == '_') && s.chars().all(is_word_char)
+    matches!(cs.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+        && s.chars().all(is_word_char)
 }
 
 /// The identifier span covering `col`, with its start byte. `None` if `col` isn't
@@ -459,25 +538,40 @@ mod tests {
     use std::path::PathBuf;
 
     fn loc(file: &str, line: u32) -> Loc {
-        Loc { path: PathBuf::from(file), line }
+        Loc {
+            path: PathBuf::from(file),
+            line,
+        }
     }
 
     // Build an Assembled from (line, Loc) pairs — mimics windUniforms.glsl injected
     // into draw.vert.glsl.
     fn fixture() -> Assembled {
         let rows: &[(&str, Loc)] = &[
-            ("layout(std140) uniform windUniforms {", loc("/p/windUniforms.glsl", 1)),
+            (
+                "layout(std140) uniform windUniforms {",
+                loc("/p/windUniforms.glsl", 1),
+            ),
             ("  float uMin;", loc("/p/windUniforms.glsl", 2)),
             ("  float maxSpeed;", loc("/p/windUniforms.glsl", 3)),
             ("} wind;", loc("/p/windUniforms.glsl", 4)),
             ("uniform sampler2D u_wind;", loc("/p/draw.vert.glsl", 5)),
-            ("vec2 windAt(sampler2D windTex, vec2 pos) {", loc("/p/draw.vert.glsl", 9)),
+            (
+                "vec2 windAt(sampler2D windTex, vec2 pos) {",
+                loc("/p/draw.vert.glsl", 9),
+            ),
             ("  return vec2(0.0);", loc("/p/draw.vert.glsl", 10)),
             ("}", loc("/p/draw.vert.glsl", 11)),
         ];
         let source = rows.iter().map(|(l, _)| *l).collect::<Vec<_>>().join("\n") + "\n";
         let map = rows.iter().map(|(_, l)| Some(l.clone())).collect();
-        Assembled { source, stage: Stage::Vertex, map, target: PathBuf::from("/p/draw.vert.glsl"), note: None }
+        Assembled {
+            source,
+            stage: Stage::Vertex,
+            map,
+            target: PathBuf::from("/p/draw.vert.glsl"),
+            note: None,
+        }
     }
 
     #[test]
@@ -495,7 +589,10 @@ mod tests {
     #[test]
     fn indexes_globals_and_functions() {
         let idx = index(&fixture());
-        assert_eq!(idx.globals.get("u_wind").unwrap().detail, "uniform sampler2D u_wind");
+        assert_eq!(
+            idx.globals.get("u_wind").unwrap().detail,
+            "uniform sampler2D u_wind"
+        );
         assert_eq!(idx.globals.get("u_wind").unwrap().loc.line, 5);
         let f = idx.functions.get("windAt").expect("windAt fn");
         assert_eq!(f.loc.line, 9);
@@ -520,7 +617,14 @@ mod tests {
     #[test]
     fn resolves_function_and_global_and_misses_gracefully() {
         let idx = index(&fixture());
-        assert_eq!(resolve(&idx, "y = windAt(u_wind, p);", 4).unwrap().loc.unwrap().line, 9);
+        assert_eq!(
+            resolve(&idx, "y = windAt(u_wind, p);", 4)
+                .unwrap()
+                .loc
+                .unwrap()
+                .line,
+            9
+        );
         let g = resolve(&idx, "z = texture(u_wind, p);", "z = texture(".len() + 1).unwrap();
         assert_eq!(g.loc.unwrap().line, 5); // u_wind global
         // Cursor on whitespace, and an unknown member, both resolve to nothing.
@@ -534,7 +638,10 @@ mod tests {
         let line = "  vec4 c = project_position_to_clipspace(a, b, d);";
         let col = line.find("project_position_to_clipspace").unwrap() + 5;
         let hit = resolve(&idx, line, col).expect("builtin resolves");
-        assert!(hit.detail.starts_with("vec4 project_position_to_clipspace("));
+        assert!(
+            hit.detail
+                .starts_with("vec4 project_position_to_clipspace(")
+        );
         assert!(hit.loc.is_none()); // no source file -> no go-to-definition
         assert!(hit.note.as_deref().unwrap().contains("deck.gl"));
     }
@@ -563,7 +670,11 @@ mod tests {
         // Only members — no globals/functions leak into a member completion.
         assert!(!labels.contains(&"windAt".to_string()));
         // A partial member still completes from the instance.
-        assert!(complete(&idx, "x = wind.max", "x = wind.max".len()).iter().any(|c| c.label == "maxSpeed"));
+        assert!(
+            complete(&idx, "x = wind.max", "x = wind.max".len())
+                .iter()
+                .any(|c| c.label == "maxSpeed")
+        );
         // Unknown instance -> nothing (don't guess).
         assert!(complete(&idx, "foo.", "foo.".len()).is_empty());
     }
@@ -571,7 +682,10 @@ mod tests {
     #[test]
     fn general_completion_lists_visible_symbols() {
         let idx = index(&fixture());
-        let labels: Vec<_> = complete(&idx, "  ", 2).into_iter().map(|c| c.label).collect();
+        let labels: Vec<_> = complete(&idx, "  ", 2)
+            .into_iter()
+            .map(|c| c.label)
+            .collect();
         for want in ["windAt", "u_wind", "wind", "project_position"] {
             assert!(labels.contains(&want.to_string()), "missing {want}");
         }
@@ -589,7 +703,10 @@ mod tests {
         assert!(draw.windows(2).all(|w| w[0].line <= w[1].line));
 
         let module = document_symbols(&idx, Path::new("/p/windUniforms.glsl"));
-        let wind = module.iter().find(|d| d.name == "wind").expect("wind block");
+        let wind = module
+            .iter()
+            .find(|d| d.name == "wind")
+            .expect("wind block");
         assert!(wind.children.iter().any(|c| c.name == "maxSpeed"));
     }
 }

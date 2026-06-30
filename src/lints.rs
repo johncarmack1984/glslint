@@ -28,15 +28,36 @@ fn es3_legacy(target: &Path, source: &str, out: &mut Vec<Diag>) {
     }
 
     const REMOVED: &[(&str, &str)] = &[
-        ("gl_FragColor", "`gl_FragColor` was removed in GLSL ES 3.00 — declare `out vec4` and write to it"),
-        ("gl_FragData", "`gl_FragData` was removed in GLSL ES 3.00 — use a user-declared `out` array"),
-        ("texture2D(", "`texture2D()` was removed in GLSL ES 3.00 — use `texture()`"),
-        ("texture2DLod(", "`texture2DLod()` was removed in GLSL ES 3.00 — use `textureLod()`"),
-        ("textureCube(", "`textureCube()` was removed in GLSL ES 3.00 — use `texture()`"),
+        (
+            "gl_FragColor",
+            "`gl_FragColor` was removed in GLSL ES 3.00 — declare `out vec4` and write to it",
+        ),
+        (
+            "gl_FragData",
+            "`gl_FragData` was removed in GLSL ES 3.00 — use a user-declared `out` array",
+        ),
+        (
+            "texture2D(",
+            "`texture2D()` was removed in GLSL ES 3.00 — use `texture()`",
+        ),
+        (
+            "texture2DLod(",
+            "`texture2DLod()` was removed in GLSL ES 3.00 — use `textureLod()`",
+        ),
+        (
+            "textureCube(",
+            "`textureCube()` was removed in GLSL ES 3.00 — use `texture()`",
+        ),
     ];
     const QUALIFIERS: &[(&str, &str)] = &[
-        ("varying ", "`varying` is GLSL ES 1.00 — use `in`/`out` in ES 3.00"),
-        ("attribute ", "`attribute` is GLSL ES 1.00 — use `in` in ES 3.00"),
+        (
+            "varying ",
+            "`varying` is GLSL ES 1.00 — use `in`/`out` in ES 3.00",
+        ),
+        (
+            "attribute ",
+            "`attribute` is GLSL ES 1.00 — use `in` in ES 3.00",
+        ),
     ];
 
     for (i, line) in source.lines().enumerate() {

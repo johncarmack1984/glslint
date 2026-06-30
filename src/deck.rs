@@ -47,7 +47,8 @@ pub fn project_fns(dir: &Path) -> Vec<ProjectFn> {
 
 /// Type-correct, empty-body GLSL stubs for the assembled unit.
 pub fn stubs(fns: &[ProjectFn]) -> String {
-    let mut s = String::from("// deck.gl project builtins (signatures resolved from node_modules)\n");
+    let mut s =
+        String::from("// deck.gl project builtins (signatures resolved from node_modules)\n");
     for f in fns {
         s.push_str(&f.signature);
         s.push_str(&stub_body(&f.ret));
@@ -88,21 +89,25 @@ fn extract_fns(text: &str, path: &Path, out: &mut Vec<ProjectFn>) {
     let lines: Vec<&str> = text.lines().collect();
     let mut i = 0;
     while i < lines.len() {
-        if let Some((ret, rest)) = split_type(lines[i].trim_start()) {
-            if let Some(open) = rest.find('(') {
-                let name = &rest[..open];
-                if rest.starts_with("project") && is_ident(name) {
-                    if let Some((params, close_line)) = collect_paren(&lines, i, rest, open) {
-                        out.push(ProjectFn {
-                            name: name.to_string(),
-                            signature: format!("{ret} {name}({params})"),
-                            ret: ret.to_string(),
-                            loc: Loc { path: path.to_path_buf(), line: i as u32 + 1 },
-                        });
-                        i = close_line + 1;
-                        continue;
-                    }
-                }
+        if let Some((ret, rest)) = split_type(lines[i].trim_start())
+            && let Some(open) = rest.find('(')
+        {
+            let name = &rest[..open];
+            if rest.starts_with("project")
+                && is_ident(name)
+                && let Some((params, close_line)) = collect_paren(&lines, i, rest, open)
+            {
+                out.push(ProjectFn {
+                    name: name.to_string(),
+                    signature: format!("{ret} {name}({params})"),
+                    ret: ret.to_string(),
+                    loc: Loc {
+                        path: path.to_path_buf(),
+                        line: i as u32 + 1,
+                    },
+                });
+                i = close_line + 1;
+                continue;
             }
         }
         i += 1;
@@ -112,10 +117,10 @@ fn extract_fns(text: &str, path: &Path, out: &mut Vec<ProjectFn>) {
 /// A leading known GLSL type, returning `(type, the rest after it)`.
 fn split_type(s: &str) -> Option<(&'static str, &str)> {
     for t in GLSL_TYPES {
-        if let Some(rest) = s.strip_prefix(t) {
-            if rest.starts_with(char::is_whitespace) {
-                return Some((t, rest.trim_start()));
-            }
+        if let Some(rest) = s.strip_prefix(t)
+            && rest.starts_with(char::is_whitespace)
+        {
+            return Some((t, rest.trim_start()));
         }
     }
     None
@@ -124,7 +129,12 @@ fn split_type(s: &str) -> Option<(&'static str, &str)> {
 /// Collect the parameter list from a `(` at `open` in `first` (the trimmed line
 /// `start`), spanning lines until the parens balance. Returns the whitespace-
 /// normalized params and the line index of the closing `)`.
-fn collect_paren(lines: &[&str], start: usize, first: &str, open: usize) -> Option<(String, usize)> {
+fn collect_paren(
+    lines: &[&str],
+    start: usize,
+    first: &str,
+    open: usize,
+) -> Option<(String, usize)> {
     let mut params = String::new();
     let mut depth = 0i32;
     let mut chunk = &first[open..];
@@ -184,15 +194,29 @@ mod tests {
         extract_fns(src, Path::new("/p/project.glsl.ts"), &mut out);
         let names: Vec<_> = out.iter().map(|f| f.name.as_str()).collect();
         assert!(names.contains(&"project_common_position_to_clipspace"));
-        let multi = out.iter().find(|f| f.name == "project_position_to_clipspace").unwrap();
-        assert_eq!(multi.signature, "vec4 project_position_to_clipspace(vec3 position, vec3 position64Low, vec3 offset)");
+        let multi = out
+            .iter()
+            .find(|f| f.name == "project_position_to_clipspace")
+            .unwrap();
+        assert_eq!(
+            multi.signature,
+            "vec4 project_position_to_clipspace(vec3 position, vec3 position64Low, vec3 offset)"
+        );
         // The WGSL `fn ...` form is not a GLSL type -> ignored.
         assert!(!names.contains(&"project_wgsl_thing"));
     }
 
     #[test]
     fn generates_typed_stub_bodies() {
-        let f = |ret: &str| ProjectFn { name: "f".into(), signature: format!("{ret} f()"), ret: ret.into(), loc: Loc { path: PathBuf::new(), line: 1 } };
+        let f = |ret: &str| ProjectFn {
+            name: "f".into(),
+            signature: format!("{ret} f()"),
+            ret: ret.into(),
+            loc: Loc {
+                path: PathBuf::new(),
+                line: 1,
+            },
+        };
         assert!(stubs(&[f("void")]).contains("void f() {}"));
         assert!(stubs(&[f("float")]).contains("float f() { return 0.0; }"));
         assert!(stubs(&[f("vec4")]).contains("vec4 f() { return vec4(0.0); }"));

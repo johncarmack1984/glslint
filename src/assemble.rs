@@ -76,7 +76,10 @@ struct Builder {
 
 impl Builder {
     fn new() -> Self {
-        Builder { lines: Vec::new(), map: Vec::new() }
+        Builder {
+            lines: Vec::new(),
+            map: Vec::new(),
+        }
     }
     fn push(&mut self, line: String, loc: Option<Loc>) {
         self.lines.push(line);
@@ -85,7 +88,13 @@ impl Builder {
     /// Append a block from `path`, mapping each line back to it.
     fn push_block(&mut self, content: &str, path: &Path) {
         for (i, l) in content.lines().enumerate() {
-            self.push(l.to_string(), Some(Loc { path: path.to_path_buf(), line: line_no(i) }));
+            self.push(
+                l.to_string(),
+                Some(Loc {
+                    path: path.to_path_buf(),
+                    line: line_no(i),
+                }),
+            );
         }
     }
     /// Append lines we synthesized; errors here map nowhere.
@@ -97,7 +106,13 @@ impl Builder {
     fn finish(self, stage: Stage, target: &Path, note: Option<&'static str>) -> Assembled {
         let mut source = self.lines.join("\n");
         source.push('\n');
-        Assembled { source, stage, map: self.map, target: target.to_path_buf(), note }
+        Assembled {
+            source,
+            stage,
+            map: self.map,
+            target: target.to_path_buf(),
+            note,
+        }
     }
 }
 
@@ -138,11 +153,16 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
     // the top (it's dropped from the body below) and map it back to its real line
     // so a version error still points home. Default it when absent. Default
     // precision follows, before any prelude — see DEFAULT_PRECISION.
-    let vidx = lines.iter().position(|l| l.trim_start().starts_with("#version"));
+    let vidx = lines
+        .iter()
+        .position(|l| l.trim_start().starts_with("#version"));
     match vidx {
         Some(i) => b.push(
             lines[i].to_string(),
-            Some(Loc { path: target.to_path_buf(), line: line_no(i) }),
+            Some(Loc {
+                path: target.to_path_buf(),
+                line: line_no(i),
+            }),
         ),
         None => b.push_synthetic(DEFAULT_VERSION),
     }
@@ -178,7 +198,13 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
         if Some(i) == vidx {
             continue;
         }
-        b.push(l.to_string(), Some(Loc { path: target.to_path_buf(), line: line_no(i) }));
+        b.push(
+            l.to_string(),
+            Some(Loc {
+                path: target.to_path_buf(),
+                line: line_no(i),
+            }),
+        );
     }
 
     b.finish(stage, target, None)
@@ -192,10 +218,20 @@ fn wrap_fragment(target: &Path, source: &str) -> Assembled {
     b.push_synthetic(DEFAULT_VERSION);
     b.push_synthetic(DEFAULT_PRECISION);
     for (i, l) in source.lines().enumerate() {
-        b.push(l.to_string(), Some(Loc { path: target.to_path_buf(), line: line_no(i) }));
+        b.push(
+            l.to_string(),
+            Some(Loc {
+                path: target.to_path_buf(),
+                line: line_no(i),
+            }),
+        );
     }
     b.push_synthetic("void main() {}");
-    b.finish(Stage::Fragment, target, Some("module fragment (syntax-only)"))
+    b.finish(
+        Stage::Fragment,
+        target,
+        Some("module fragment (syntax-only)"),
+    )
 }
 
 /// True if two paths point at the same file. Canonicalize when possible; fall
@@ -212,14 +248,27 @@ mod tests {
     use super::*;
 
     fn no_config() -> Config {
-        Config { preludes: vec![], modules: vec![], use_builtin_prelude: false }
+        Config {
+            preludes: vec![],
+            modules: vec![],
+            use_builtin_prelude: false,
+        }
     }
 
     #[test]
     fn detect_stage_reads_the_filename() {
-        assert_eq!(detect_stage(Path::new("draw.vert.glsl")), Some(Stage::Vertex));
-        assert_eq!(detect_stage(Path::new("draw.frag.glsl")), Some(Stage::Fragment));
-        assert_eq!(detect_stage(Path::new("sim.comp.glsl")), Some(Stage::Compute));
+        assert_eq!(
+            detect_stage(Path::new("draw.vert.glsl")),
+            Some(Stage::Vertex)
+        );
+        assert_eq!(
+            detect_stage(Path::new("draw.frag.glsl")),
+            Some(Stage::Fragment)
+        );
+        assert_eq!(
+            detect_stage(Path::new("sim.comp.glsl")),
+            Some(Stage::Compute)
+        );
         // A bare module fragment is not a stage shader.
         assert_eq!(detect_stage(Path::new("windUniforms.glsl")), None);
     }
@@ -228,7 +277,8 @@ mod tests {
     fn line_map_has_exactly_one_entry_per_assembled_line() {
         // The whole diagnostic translation indexes `map[asm_line - 1]`, so the map
         // must stay 1:1 with the assembled source's lines.
-        let src = "#version 300 es\nprecision highp float;\nout vec4 c;\nvoid main(){ c = vec4(1.0); }\n";
+        let src =
+            "#version 300 es\nprecision highp float;\nout vec4 c;\nvoid main(){ c = vec4(1.0); }\n";
         let a = assemble(Path::new("draw.frag.glsl"), src, &no_config());
         assert_eq!(a.source.lines().count(), a.map.len());
     }

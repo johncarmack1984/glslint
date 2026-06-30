@@ -85,21 +85,20 @@ impl Config {
     pub fn resolve_for(file: &Path) -> Config {
         let dir = file.parent().unwrap_or(Path::new("."));
 
-        if let Some(toml_path) = find_up(dir, "glsl-lsp.toml") {
-            if let Ok(text) = std::fs::read_to_string(&toml_path) {
-                if let Ok(cf) = toml::from_str::<ConfigFile>(&text) {
-                    let base = toml_path.parent().unwrap_or(Path::new("."));
-                    // Per-shader bindings take precedence over the legacy global list.
-                    if !cf.shaders.is_empty() {
-                        return resolve_bindings(file, &cf, base);
-                    }
-                    return Config {
-                        preludes: join_all(base, &cf.preludes),
-                        modules: join_all(base, &cf.modules),
-                        use_builtin_prelude: cf.builtin_prelude.unwrap_or(true),
-                    };
-                }
+        if let Some(toml_path) = find_up(dir, "glsl-lsp.toml")
+            && let Ok(text) = std::fs::read_to_string(&toml_path)
+            && let Ok(cf) = toml::from_str::<ConfigFile>(&text)
+        {
+            let base = toml_path.parent().unwrap_or(Path::new("."));
+            // Per-shader bindings take precedence over the legacy global list.
+            if !cf.shaders.is_empty() {
+                return resolve_bindings(file, &cf, base);
             }
+            return Config {
+                preludes: join_all(base, &cf.preludes),
+                modules: join_all(base, &cf.modules),
+                use_builtin_prelude: cf.builtin_prelude.unwrap_or(true),
+            };
         }
 
         // No glsl-lsp.toml — try to auto-derive the bindings from the JS
@@ -132,9 +131,8 @@ fn resolve_bindings(file: &Path, cf: &ConfigFile, base: &Path) -> Config {
         .ok()
         .and_then(|r| r.to_str())
         .map(|s| s.replace('\\', "/"));
-    let matches = |pat: &str| {
-        glob_match(pat, name) || rel.as_deref().is_some_and(|r| glob_match(pat, r))
-    };
+    let matches =
+        |pat: &str| glob_match(pat, name) || rel.as_deref().is_some_and(|r| glob_match(pat, r));
 
     let Some(binding) = cf.shaders.iter().find(|s| matches(&s.pattern)) else {
         return Config {
@@ -147,14 +145,12 @@ fn resolve_bindings(file: &Path, cf: &ConfigFile, base: &Path) -> Config {
     let mut modules = Vec::new();
     let mut wants_builtin = false;
     for module_name in &binding.modules {
-        match cf.module_defs.iter().find(|m| &m.name == module_name) {
-            Some(def) => {
-                if let Some(src) = &def.source {
-                    modules.push(base.join(src));
-                }
-                wants_builtin |= def.builtin;
+        // An unknown module name is ignored (could warn once we have a channel).
+        if let Some(def) = cf.module_defs.iter().find(|m| &m.name == module_name) {
+            if let Some(src) = &def.source {
+                modules.push(base.join(src));
             }
-            None => {} // unknown module name — ignore (could warn once we have a channel)
+            wants_builtin |= def.builtin;
         }
     }
 
@@ -178,10 +174,10 @@ pub fn drift_for(file: &Path) -> Option<(String, PathBuf)> {
     let cf: ConfigFile = toml::from_str(&text).ok()?;
     let base = toml_path.parent().unwrap_or(Path::new("."));
     for m in &cf.module_defs {
-        if let (Some(src), Some(types)) = (&m.source, &m.types) {
-            if same_path(&base.join(src), file) {
-                return Some((m.name.clone(), base.join(types)));
-            }
+        if let (Some(src), Some(types)) = (&m.source, &m.types)
+            && same_path(&base.join(src), file)
+        {
+            return Some((m.name.clone(), base.join(types)));
         }
     }
     None
@@ -267,19 +263,45 @@ mod tests {
         assert!(glob_match("blit.vert.glsl", "blit.vert.glsl"));
         assert!(!glob_match("draw.*.glsl", "blit.vert.glsl"));
         assert!(!glob_match("draw.*.glsl", "draw.vert.glsl.bak"));
-        assert!(glob_match("src/shaders/draw.*", "src/shaders/draw.vert.glsl"));
+        assert!(glob_match(
+            "src/shaders/draw.*",
+            "src/shaders/draw.vert.glsl"
+        ));
     }
 
     fn cf() -> ConfigFile {
         ConfigFile {
             module_defs: vec![
-                ModuleDef { name: "windUniforms".into(), source: Some("src/shaders/windUniforms.glsl".into()), builtin: false, types: None },
-                ModuleDef { name: "blitUniforms".into(), source: Some("src/shaders/blitUniforms.glsl".into()), builtin: false, types: None },
-                ModuleDef { name: "project32".into(), source: None, builtin: true, types: None },
+                ModuleDef {
+                    name: "windUniforms".into(),
+                    source: Some("src/shaders/windUniforms.glsl".into()),
+                    builtin: false,
+                    types: None,
+                },
+                ModuleDef {
+                    name: "blitUniforms".into(),
+                    source: Some("src/shaders/blitUniforms.glsl".into()),
+                    builtin: false,
+                    types: None,
+                },
+                ModuleDef {
+                    name: "project32".into(),
+                    source: None,
+                    builtin: true,
+                    types: None,
+                },
             ],
             shaders: vec![
-                ShaderBinding { pattern: "draw.*.glsl".into(), modules: vec!["project32".into(), "windUniforms".into()], builtin_prelude: None },
-                ShaderBinding { pattern: "blit.*.glsl".into(), modules: vec!["blitUniforms".into()], builtin_prelude: None },
+                ShaderBinding {
+                    pattern: "draw.*.glsl".into(),
+                    modules: vec!["project32".into(), "windUniforms".into()],
+                    builtin_prelude: None,
+                },
+                ShaderBinding {
+                    pattern: "blit.*.glsl".into(),
+                    modules: vec!["blitUniforms".into()],
+                    builtin_prelude: None,
+                },
             ],
             ..Default::default()
         }
@@ -291,17 +313,27 @@ mod tests {
         // draw -> project32 (builtin) + windUniforms (a file), no blit module.
         let draw = resolve_bindings(Path::new("/proj/src/shaders/draw.vert.glsl"), &cf(), base);
         assert!(draw.use_builtin_prelude);
-        assert_eq!(draw.modules, vec![PathBuf::from("/proj/src/shaders/windUniforms.glsl")]);
+        assert_eq!(
+            draw.modules,
+            vec![PathBuf::from("/proj/src/shaders/windUniforms.glsl")]
+        );
 
         // blit -> only blitUniforms, and NOT the deck prelude (it uses no project).
         let blit = resolve_bindings(Path::new("/proj/src/shaders/blit.frag.glsl"), &cf(), base);
         assert!(!blit.use_builtin_prelude);
-        assert_eq!(blit.modules, vec![PathBuf::from("/proj/src/shaders/blitUniforms.glsl")]);
+        assert_eq!(
+            blit.modules,
+            vec![PathBuf::from("/proj/src/shaders/blitUniforms.glsl")]
+        );
     }
 
     #[test]
     fn unmatched_shader_gets_only_the_prelude() {
-        let cfg = resolve_bindings(Path::new("/proj/src/shaders/windUniforms.glsl"), &cf(), Path::new("/proj"));
+        let cfg = resolve_bindings(
+            Path::new("/proj/src/shaders/windUniforms.glsl"),
+            &cf(),
+            Path::new("/proj"),
+        );
         assert!(cfg.modules.is_empty());
     }
 }

@@ -20,7 +20,7 @@ mod lints;
 mod lsp;
 mod symbols;
 
-use diagnostics::{print_diag, Severity};
+use diagnostics::{Severity, print_diag};
 use std::path::Path;
 
 #[tokio::main]

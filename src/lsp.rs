@@ -59,10 +59,12 @@ impl Backend {
         // check_source spawns a glslang subprocess and reads module files; run it
         // off the async runtime so it never blocks other LSP requests.
         let (check_path, check_text) = (path.clone(), text.clone());
-        let diags = match tokio::task::spawn_blocking(move || check_source(&check_path, &check_text)).await {
-            Ok(d) => d,
-            Err(_) => return, // the blocking task panicked or was cancelled
-        };
+        let diags =
+            match tokio::task::spawn_blocking(move || check_source(&check_path, &check_text)).await
+            {
+                Ok(d) => d,
+                Err(_) => return, // the blocking task panicked or was cancelled
+            };
         // A newer edit may have arrived while we were checking — let it publish.
         if self.superseded(&uri, generation) {
             return;
@@ -108,14 +110,19 @@ impl Backend {
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, _: InitializeParams) -> tower_lsp::jsonrpc::Result<InitializeResult> {
+    async fn initialize(
+        &self,
+        _: InitializeParams,
+    ) -> tower_lsp::jsonrpc::Result<InitializeResult> {
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
                 name: "glslint".into(),
                 version: Some(env!("CARGO_PKG_VERSION").into()),
             }),
             capabilities: ServerCapabilities {
-                text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
+                text_document_sync: Some(TextDocumentSyncCapability::Kind(
+                    TextDocumentSyncKind::FULL,
+                )),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
@@ -135,7 +142,8 @@ impl LanguageServer for Backend {
     }
 
     async fn did_open(&self, p: DidOpenTextDocumentParams) {
-        self.refresh(p.text_document.uri, p.text_document.text).await;
+        self.refresh(p.text_document.uri, p.text_document.text)
+            .await;
     }
 
     async fn did_change(&self, p: DidChangeTextDocumentParams) {
@@ -163,16 +171,21 @@ impl LanguageServer for Backend {
 
     async fn hover(&self, params: HoverParams) -> tower_lsp::jsonrpc::Result<Option<Hover>> {
         let p = params.text_document_position_params;
-        Ok(self.resolve_at(&p.text_document.uri, p.position).map(|hit| {
-            let mut value = format!("```glsl\n{}\n```", hit.detail);
-            if let Some(note) = hit.note {
-                value.push_str(&format!("\n\n{note}"));
-            }
-            Hover {
-                contents: HoverContents::Markup(MarkupContent { kind: MarkupKind::Markdown, value }),
-                range: None,
-            }
-        }))
+        Ok(self
+            .resolve_at(&p.text_document.uri, p.position)
+            .map(|hit| {
+                let mut value = format!("```glsl\n{}\n```", hit.detail);
+                if let Some(note) = hit.note {
+                    value.push_str(&format!("\n\n{note}"));
+                }
+                Hover {
+                    contents: HoverContents::Markup(MarkupContent {
+                        kind: MarkupKind::Markdown,
+                        value,
+                    }),
+                    range: None,
+                }
+            }))
     }
 
     async fn goto_definition(
@@ -180,13 +193,15 @@ impl LanguageServer for Backend {
         params: GotoDefinitionParams,
     ) -> tower_lsp::jsonrpc::Result<Option<GotoDefinitionResponse>> {
         let p = params.text_document_position_params;
-        Ok(self.resolve_at(&p.text_document.uri, p.position).and_then(|hit| {
-            let loc = hit.loc?; // builtins have no source location
-            let uri = Url::from_file_path(&loc.path).ok()?;
-            let line = loc.line.saturating_sub(1);
-            let range = Range::new(Position::new(line, 0), Position::new(line, 0));
-            Some(GotoDefinitionResponse::Scalar(Location { uri, range }))
-        }))
+        Ok(self
+            .resolve_at(&p.text_document.uri, p.position)
+            .and_then(|hit| {
+                let loc = hit.loc?; // builtins have no source location
+                let uri = Url::from_file_path(&loc.path).ok()?;
+                let line = loc.line.saturating_sub(1);
+                let range = Range::new(Position::new(line, 0), Position::new(line, 0));
+                Some(GotoDefinitionResponse::Scalar(Location { uri, range }))
+            }))
     }
 
     async fn completion(
@@ -200,10 +215,11 @@ impl LanguageServer for Backend {
         let Some(line) = text.lines().nth(p.position.line as usize) else {
             return Ok(None);
         };
-        let items: Vec<CompletionItem> = symbols::complete(&index, line, p.position.character as usize)
-            .into_iter()
-            .map(to_completion_item)
-            .collect();
+        let items: Vec<CompletionItem> =
+            symbols::complete(&index, line, p.position.character as usize)
+                .into_iter()
+                .map(to_completion_item)
+                .collect();
         Ok(Some(CompletionResponse::Array(items)))
     }
 
@@ -288,9 +304,16 @@ fn completion_kind(k: symbols::SymKind) -> CompletionItemKind {
 #[allow(deprecated)] // `DocumentSymbol::deprecated` is a required (deprecated) field
 fn to_document_symbol(d: symbols::DocSym, lines: &[&str]) -> DocumentSymbol {
     let line = d.line.saturating_sub(1);
-    let len = lines.get(line as usize).map(|l| l.chars().count() as u32).unwrap_or(0);
+    let len = lines
+        .get(line as usize)
+        .map(|l| l.chars().count() as u32)
+        .unwrap_or(0);
     let range = Range::new(Position::new(line, 0), Position::new(line, len));
-    let children: Vec<DocumentSymbol> = d.children.into_iter().map(|c| to_document_symbol(c, lines)).collect();
+    let children: Vec<DocumentSymbol> = d
+        .children
+        .into_iter()
+        .map(|c| to_document_symbol(c, lines))
+        .collect();
     DocumentSymbol {
         name: d.name,
         detail: Some(d.detail),

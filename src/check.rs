@@ -30,9 +30,7 @@ pub fn check_source(path: &Path, source: &str) -> Vec<Diag> {
     if let Some((module, types_path)) = crate::config::drift_for(path) {
         diags.extend(crate::drift::check(path, source, &module, &types_path));
     }
-    diags.sort_by(|a, b| {
-        (a.path.as_path(), a.line, a.col).cmp(&(b.path.as_path(), b.line, b.col))
-    });
+    diags.sort_by(|a, b| (a.path.as_path(), a.line, a.col).cmp(&(b.path.as_path(), b.line, b.col)));
     diags
 }
 
@@ -57,7 +55,10 @@ fn check_assembled(a: &Assembled) -> Vec<Diag> {
             )];
         }
         Err(RunError::Io(e)) => {
-            return vec![tool_error(a, format!("failed to run glslangValidator: {e}"))];
+            return vec![tool_error(
+                a,
+                format!("failed to run glslangValidator: {e}"),
+            )];
         }
     };
 
@@ -124,7 +125,10 @@ fn run_glslang(a: &Assembled) -> Result<GlslangRun, RunError> {
         // Diagnostics land on stdout; fold in stderr defensively.
         let mut output = String::from_utf8_lossy(&out.stdout).into_owned();
         output.push_str(&String::from_utf8_lossy(&out.stderr));
-        return Ok(GlslangRun { output, success: out.status.success() });
+        return Ok(GlslangRun {
+            output,
+            success: out.status.success(),
+        });
     }
     Err(RunError::NotFound)
 }
@@ -135,7 +139,10 @@ fn glslang_candidates() -> (Vec<String>, bool) {
     if let Some(bin) = std::env::var_os("GLSLINT_GLSLANG") {
         return (vec![bin.to_string_lossy().into_owned()], true);
     }
-    (vec!["glslangValidator".to_string(), "glslang".to_string()], false)
+    (
+        vec!["glslangValidator".to_string(), "glslang".to_string()],
+        false,
+    )
 }
 
 /// Parse glslangValidator's diagnostics and map each home.
@@ -385,10 +392,10 @@ mod tests {
     fn parse_located_file_level_messages_have_no_prefix() {
         // A bad `#version` and its follow-on carry no `0:LINE:` prefix → None,
         // so they route to the line-1 fallback rather than a bogus location.
-        assert!(parse_located(
-            "#version: only version 300, 310, and 320 support the es profile"
-        )
-        .is_none());
+        assert!(
+            parse_located("#version: only version 300, 310, and 320 support the es profile")
+                .is_none()
+        );
         assert!(parse_located("version not supported").is_none());
     }
 
@@ -451,7 +458,13 @@ mod tests {
         // point at THAT module, not the file under check.
         let module = PathBuf::from("/proj/windUniforms.glsl");
         let a = assembled(
-            vec![None, Some(Loc { path: module.clone(), line: 3 })],
+            vec![
+                None,
+                Some(Loc {
+                    path: module.clone(),
+                    line: 3,
+                }),
+            ],
             "#version 300 es\nfloat uMax;\n",
         );
         let d = map_located(&a, 2, Some("uMax"), Severity::Error, "boom".into()).unwrap();
@@ -462,7 +475,10 @@ mod tests {
     #[test]
     fn map_located_truncates_giant_messages() {
         let a = assembled(
-            vec![Some(Loc { path: PathBuf::from("/proj/x.frag.glsl"), line: 1 })],
+            vec![Some(Loc {
+                path: PathBuf::from("/proj/x.frag.glsl"),
+                line: 1,
+            })],
             "x\n",
         );
         let giant = format!("'=' : cannot convert from {}", "a".repeat(500));
@@ -478,7 +494,10 @@ mod tests {
         // Root cause + derived giant message + terminator + summary, all from one
         // bad line → exactly one diagnostic (the root cause) survives.
         let a = assembled(
-            vec![Some(Loc { path: PathBuf::from("/proj/x.frag.glsl"), line: 7 })],
+            vec![Some(Loc {
+                path: PathBuf::from("/proj/x.frag.glsl"),
+                line: 7,
+            })],
             "ignored\n",
         );
         let out = "x.frag.glsl\n\
