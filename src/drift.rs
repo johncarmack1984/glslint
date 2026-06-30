@@ -13,16 +13,30 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 /// Drift-check `glsl_path` (a module's UBO block) against its `types` JS file.
-pub fn check(glsl_path: &Path, glsl_source: &str, module_name: &str, types_path: &Path) -> Vec<Diag> {
+pub fn check(
+    glsl_path: &Path,
+    glsl_source: &str,
+    module_name: &str,
+    types_path: &Path,
+) -> Vec<Diag> {
     let Ok(js) = std::fs::read_to_string(types_path) else {
         return Vec::new();
     };
-    let js_label = types_path.file_name().and_then(|n| n.to_str()).unwrap_or("uniformTypes");
+    let js_label = types_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("uniformTypes");
     check_against(glsl_path, glsl_source, module_name, &js, js_label)
 }
 
 /// The file-free core, for testing.
-fn check_against(glsl_path: &Path, glsl_source: &str, module_name: &str, js: &str, js_label: &str) -> Vec<Diag> {
+fn check_against(
+    glsl_path: &Path,
+    glsl_source: &str,
+    module_name: &str,
+    js: &str,
+    js_label: &str,
+) -> Vec<Diag> {
     let Some(js_types) = extract_uniform_types(js, module_name) else {
         return Vec::new(); // couldn't read the JS confidently — say nothing
     };
@@ -31,7 +45,10 @@ fn check_against(glsl_path: &Path, glsl_source: &str, module_name: &str, js: &st
         return Vec::new();
     }
 
-    let js_map: HashMap<&str, &str> = js_types.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let js_map: HashMap<&str, &str> = js_types
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
     let glsl_names: HashSet<&str> = glsl.iter().map(|(n, ..)| n.as_str()).collect();
     let mut out = Vec::new();
 
@@ -45,16 +62,16 @@ fn check_against(glsl_path: &Path, glsl_source: &str, module_name: &str, js: &st
                 format!("`{name}` is in the GLSL block but not in `{js_label}` uniformTypes"),
             )),
             Some(luma) => {
-                if let Some(expected) = luma_to_glsl(luma) {
-                    if expected != gtype {
-                        out.push(warn(
+                if let Some(expected) = luma_to_glsl(luma)
+                    && expected != gtype
+                {
+                    out.push(warn(
                             glsl_path,
                             *line,
                             *col,
                             name.chars().count() as u32,
                             format!("type drift: GLSL `{gtype} {name}` vs uniformTypes `{name}: '{luma}'` (expected `{expected}`)"),
                         ));
-                    }
                 }
             }
         }
@@ -74,7 +91,15 @@ fn check_against(glsl_path: &Path, glsl_source: &str, module_name: &str, js: &st
 }
 
 fn warn(path: &Path, line: u32, col: u32, len: u32, message: String) -> Diag {
-    Diag { path: path.to_path_buf(), line, col, len, severity: Severity::Warning, message, source: "drift" }
+    Diag {
+        path: path.to_path_buf(),
+        line,
+        col,
+        len,
+        severity: Severity::Warning,
+        message,
+        source: "drift",
+    }
 }
 
 /// Members of the first `uniform … { … }` block: `(name, glsl_type, line, col)`.
@@ -111,10 +136,7 @@ fn extract_uniform_types(js: &str, module_name: &str) -> Option<Vec<(String, Str
     let kw = js[decl..].find("uniformTypes").map(|o| o + decl)?;
     let open = js[kw..].find('{').map(|o| o + kw)?;
     let inner = brace_block(&js[open..])?;
-    let pairs: Vec<(String, String)> = inner
-        .lines()
-        .filter_map(parse_pair)
-        .collect();
+    let pairs: Vec<(String, String)> = inner.lines().filter_map(parse_pair).collect();
     (!pairs.is_empty()).then_some(pairs)
 }
 
@@ -127,7 +149,10 @@ fn decl_offset(js: &str, name: &str) -> Option<usize> {
             let start = from + rel;
             let after = start + needle.len();
             // require a word boundary after the name (so `windUniforms` != `windUniformsX`)
-            let ok = js[after..].chars().next().is_none_or(|c| !c.is_alphanumeric() && c != '_');
+            let ok = js[after..]
+                .chars()
+                .next()
+                .is_none_or(|c| !c.is_alphanumeric() && c != '_');
             if ok {
                 return Some(after);
             }
@@ -203,10 +228,16 @@ mod tests {
     const JS: &str = "export const windUniforms = {\n  name: 'wind',\n  uniformTypes: {\n    uMin: 'f32',\n    uMax: 'f32',\n    viewOffset: 'vec2<f32>',\n  },\n};\n";
 
     fn run(glsl: &str, js: &str) -> Vec<String> {
-        check_against(Path::new("/p/windUniforms.glsl"), glsl, "windUniforms", js, "modules.ts")
-            .into_iter()
-            .map(|d| d.message)
-            .collect()
+        check_against(
+            Path::new("/p/windUniforms.glsl"),
+            glsl,
+            "windUniforms",
+            js,
+            "modules.ts",
+        )
+        .into_iter()
+        .map(|d| d.message)
+        .collect()
     }
 
     #[test]
@@ -218,14 +249,20 @@ mod tests {
     fn flags_member_only_in_glsl() {
         let glsl = GLSL.replace("} wind;", "  float maxSpeed;\n} wind;");
         let msgs = run(&glsl, JS);
-        assert!(msgs.iter().any(|m| m.contains("maxSpeed") && m.contains("not in")));
+        assert!(
+            msgs.iter()
+                .any(|m| m.contains("maxSpeed") && m.contains("not in"))
+        );
     }
 
     #[test]
     fn flags_member_only_in_js() {
         let js = JS.replace("uMax: 'f32',", "uMax: 'f32',\n    randSeed: 'f32',");
         let msgs = run(GLSL, &js);
-        assert!(msgs.iter().any(|m| m.contains("randSeed") && m.contains("no such member")));
+        assert!(
+            msgs.iter()
+                .any(|m| m.contains("randSeed") && m.contains("no such member"))
+        );
     }
 
     #[test]
@@ -233,7 +270,9 @@ mod tests {
         // GLSL says `vec2 viewOffset`, JS says it's an f32.
         let js = JS.replace("viewOffset: 'vec2<f32>'", "viewOffset: 'f32'");
         let msgs = run(GLSL, &js);
-        assert!(msgs.iter().any(|m| m.contains("type drift") && m.contains("viewOffset") && m.contains("expected `float`")));
+        assert!(msgs.iter().any(|m| m.contains("type drift")
+            && m.contains("viewOffset")
+            && m.contains("expected `float`")));
     }
 
     #[test]

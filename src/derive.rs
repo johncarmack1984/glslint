@@ -26,10 +26,10 @@ pub struct Derived {
 pub fn derive(shader: &Path) -> Option<Derived> {
     let name = shader.file_name()?.to_str()?;
     for ts in candidate_ts(shader) {
-        if let Ok(text) = std::fs::read_to_string(&ts) {
-            if let Some(d) = derive_from(&text, &ts, name) {
-                return Some(d);
-            }
+        if let Ok(text) = std::fs::read_to_string(&ts)
+            && let Some(d) = derive_from(&text, &ts, name)
+        {
+            return Some(d);
         }
     }
     None
@@ -64,7 +64,10 @@ fn derive_from(text: &str, ts: &Path, shader_name: &str) -> Option<Derived> {
     if modules.is_empty() && !use_builtin_prelude {
         return None;
     }
-    Some(Derived { modules, use_builtin_prelude })
+    Some(Derived {
+        modules,
+        use_builtin_prelude,
+    })
 }
 
 /// `*.ts`/`*.js` files in the shader's ancestor directories, up to the project
@@ -77,8 +80,10 @@ fn candidate_ts(shader: &Path) -> Vec<PathBuf> {
         if let Ok(entries) = std::fs::read_dir(d) {
             for e in entries.flatten() {
                 let p = e.path();
-                if matches!(p.extension().and_then(|x| x.to_str()), Some("ts" | "tsx" | "js" | "jsx" | "mts"))
-                    && !p.to_string_lossy().contains("node_modules")
+                if matches!(
+                    p.extension().and_then(|x| x.to_str()),
+                    Some("ts" | "tsx" | "js" | "jsx" | "mts")
+                ) && !p.to_string_lossy().contains("node_modules")
                 {
                     out.push(p);
                 }
@@ -102,7 +107,9 @@ fn es_imports(text: &str) -> HashMap<String, String> {
     while let Some(rel) = text[search..].find(" from ") {
         let fpos = search + rel;
         search = fpos + 6;
-        let Some(path) = first_quoted(&text[fpos + 6..]) else { continue };
+        let Some(path) = first_quoted(&text[fpos + 6..]) else {
+            continue;
+        };
         if let Some(ipos) = text[..fpos].rfind("import ") {
             let names = &text[ipos + 7..fpos];
             // a `;` between `import` and `from` means they're separate statements
@@ -123,7 +130,13 @@ fn add_import_names(map: &mut HashMap<String, String>, names: &str, path: &str) 
         }
         if let Some(close) = names.rfind('}') {
             for part in names[open + 1..close].split(',') {
-                let local = part.trim().trim_start_matches("type ").split(" as ").last().unwrap_or("").trim();
+                let local = part
+                    .trim()
+                    .trim_start_matches("type ")
+                    .split(" as ")
+                    .last()
+                    .unwrap_or("")
+                    .trim();
                 if is_ident(local) {
                     map.insert(local.to_string(), path.to_string());
                 }
@@ -154,15 +167,17 @@ fn model_modules_for(text: &str, binding: &str) -> Option<Vec<String>> {
         if !contains_ident(&call, binding) {
             continue;
         }
-        if let Some(mi) = call.find("modules") {
-            if let Some(lb) = call[mi..].find('[').map(|o| mi + o) {
-                if let Some((arr, _)) = bracket_span(&call, lb, b'[', b']') {
-                    let ids: Vec<String> =
-                        arr.split(',').map(|s| s.trim().to_string()).filter(|s| is_ident(s)).collect();
-                    if !ids.is_empty() {
-                        return Some(ids);
-                    }
-                }
+        if let Some(mi) = call.find("modules")
+            && let Some(lb) = call[mi..].find('[').map(|o| mi + o)
+            && let Some((arr, _)) = bracket_span(&call, lb, b'[', b']')
+        {
+            let ids: Vec<String> = arr
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| is_ident(s))
+                .collect();
+            if !ids.is_empty() {
+                return Some(ids);
             }
         }
     }
@@ -220,7 +235,11 @@ fn find_const(text: &str, id: &str) -> Option<usize> {
     while let Some(rel) = text[from..].find(&needle) {
         let start = from + rel;
         let after = start + needle.len();
-        if text[after..].chars().next().is_none_or(|c| !c.is_alphanumeric() && c != '_') {
+        if text[after..]
+            .chars()
+            .next()
+            .is_none_or(|c| !c.is_alphanumeric() && c != '_')
+        {
             return Some(after);
         }
         from = start + 1;
@@ -312,9 +331,18 @@ mod tests {
 
     #[test]
     fn finds_modules_for_a_shader_binding() {
-        assert_eq!(model_modules_for(WINDLAYER, "DRAW_VS").unwrap(), vec!["project32", "windUniforms"]);
-        assert_eq!(model_modules_for(WINDLAYER, "DRAW_FS").unwrap(), vec!["project32", "windUniforms"]);
-        assert_eq!(model_modules_for(WINDLAYER, "BLIT_VS").unwrap(), vec!["blitUniforms"]);
+        assert_eq!(
+            model_modules_for(WINDLAYER, "DRAW_VS").unwrap(),
+            vec!["project32", "windUniforms"]
+        );
+        assert_eq!(
+            model_modules_for(WINDLAYER, "DRAW_FS").unwrap(),
+            vec!["project32", "windUniforms"]
+        );
+        assert_eq!(
+            model_modules_for(WINDLAYER, "BLIT_VS").unwrap(),
+            vec!["blitUniforms"]
+        );
     }
 
     #[test]
@@ -322,7 +350,10 @@ mod tests {
         let modules = "import WIND from './shaders/windUniforms.glsl?raw';\n\
             export const windUniforms: any = { name: 'wind', vs: WIND, fs: WIND, uniformTypes: { a: 'f32' } };\n";
         assert_eq!(module_glsl_var(modules, "windUniforms").unwrap(), "WIND");
-        assert_eq!(es_imports(modules)["WIND"], "./shaders/windUniforms.glsl?raw");
+        assert_eq!(
+            es_imports(modules)["WIND"],
+            "./shaders/windUniforms.glsl?raw"
+        );
     }
 
     #[test]
