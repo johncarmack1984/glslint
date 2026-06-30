@@ -1,0 +1,35 @@
+name: CI
+
+# Build, lint, and test on every pull request and push to main. The toolchain
+# channel comes from rust-toolchain.toml. glslint shells out to glslangValidator
+# (the Khronos GLSL reference compiler), so CI installs glslang-tools to exercise
+# the real validation path.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Install glslang (provides glslangValidator)
+        run: sudo apt-get update && sudo apt-get install -y glslang-tools
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test --locked
