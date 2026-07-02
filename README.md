@@ -1,6 +1,6 @@
 # glslint
 
-A luma.gl / deck.gl-aware GLSL checker and language server. Stock GLSL tools choke on these shaders because they aren't standalone translation units: they reference UBO instances (`wind.*`, `blit.*`) declared in separate module fragments and deck builtins (`project_position_to_clipspace`) injected at link time. glslint **assembles** the modules + deck stubs into a complete unit, validates it with the Khronos **glslangValidator** reference compiler, and **maps diagnostics back to the original file and line**.
+A luma.gl / deck.gl-aware GLSL checker and language server. Stock GLSL tools choke on these shaders because they aren't standalone translation units: they reference UBO instances (`wind.*`, `blit.*`) declared in separate module fragments and deck builtins (`project_position_to_clipspace`) injected at link time. glslint assembles the modules + deck stubs into a complete unit, validates it with the Khronos glslangValidator reference compiler, and maps diagnostics back to the original file and line.
 
 ## Requirements
 
