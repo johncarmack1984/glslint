@@ -252,6 +252,7 @@ fn find_up(start: &Path, name: &str) -> Option<PathBuf> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)] // test code: unwrap IS the assertion
 mod tests {
     use super::*;
 

@@ -353,6 +353,7 @@ fn tool_error(a: &Assembled, message: String) -> Diag {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)] // test code: unwrap IS the assertion
 mod tests {
     use super::*;
     use crate::assemble::{Assembled, Loc, Stage};

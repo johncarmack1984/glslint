@@ -221,6 +221,7 @@ fn luma_to_glsl(t: &str) -> Option<&'static str> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)] // test code: unwrap IS the assertion
 mod tests {
     use super::*;
 

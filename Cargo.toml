@@ -17,7 +17,11 @@ tower-lsp = "0.20.0"
 # full clippy `all` group surfaces as warnings (CI runs clippy with
 # -D warnings, so these are enforced).
 [lints.rust]
+missing_docs = "warn"
 unsafe_code = "forbid"
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+panic = "warn"
+todo = "warn"

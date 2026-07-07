@@ -532,6 +532,7 @@ fn trailing_ident(s: &str) -> Option<&str> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)] // test code: unwrap IS the assertion
 mod tests {
     use super::*;
     use crate::assemble::{Assembled, Stage};

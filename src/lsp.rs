@@ -6,7 +6,7 @@ use crate::config::Config;
 use crate::diagnostics::{Diag, Severity};
 use crate::{assemble, symbols};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
@@ -36,13 +36,19 @@ struct Backend {
     generations: Mutex<HashMap<Url, u64>>,
 }
 
+/// Lock, recovering from poisoning: a panicked holder leaves the document
+/// cache in its last-written state, which is still valid to serve.
+fn locked<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 impl Backend {
     async fn refresh(&self, uri: Url, text: String) {
         // Record the text and claim a generation for this edit.
         let generation = {
-            let mut docs = self.docs.lock().unwrap();
+            let mut docs = locked(&self.docs);
             docs.insert(uri.clone(), text.clone());
-            let mut gens = self.generations.lock().unwrap();
+            let mut gens = locked(&self.generations);
             let g = gens.entry(uri.clone()).or_insert(0);
             *g += 1;
             *g
@@ -85,7 +91,7 @@ impl Backend {
     /// True if a newer edit has superseded `generation` for `uri` (or the document
     /// was closed), meaning this refresh should not publish.
     fn superseded(&self, uri: &Url, generation: u64) -> bool {
-        self.generations.lock().unwrap().get(uri).copied() != Some(generation)
+        locked(&self.generations).get(uri).copied() != Some(generation)
     }
 
     /// Resolve the symbol under `pos` to a hover/definition hit. Assembles the
@@ -100,7 +106,7 @@ impl Backend {
     /// Assemble the document and scan it for symbols. Cheap — no glslang
     /// subprocess. Returns the document text and its file path alongside the index.
     fn index_for(&self, uri: &Url) -> Option<(String, std::path::PathBuf, symbols::SymbolIndex)> {
-        let text = self.docs.lock().unwrap().get(uri)?.clone();
+        let text = locked(&self.docs).get(uri)?.clone();
         let path = uri.to_file_path().ok()?;
         let config = Config::resolve_for(&path);
         let assembled = assemble::assemble(&path, &text, &config);
@@ -157,16 +163,16 @@ impl LanguageServer for Backend {
         let uri = p.text_document.uri;
         let text = p
             .text
-            .or_else(|| self.docs.lock().unwrap().get(&uri).cloned())
+            .or_else(|| locked(&self.docs).get(&uri).cloned())
             .unwrap_or_default();
         self.refresh(uri, text).await;
     }
 
     async fn did_close(&self, p: DidCloseTextDocumentParams) {
         let uri = p.text_document.uri;
-        self.docs.lock().unwrap().remove(&uri);
+        locked(&self.docs).remove(&uri);
         // Drop the generation too, so any in-flight refresh for this doc bails.
-        self.generations.lock().unwrap().remove(&uri);
+        locked(&self.generations).remove(&uri);
     }
 
     async fn hover(&self, params: HoverParams) -> tower_lsp::jsonrpc::Result<Option<Hover>> {
