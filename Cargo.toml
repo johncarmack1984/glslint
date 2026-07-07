@@ -12,3 +12,12 @@ serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.52.3", features = ["full"] }
 toml = "1.1.2"
 tower-lsp = "0.20.0"
+
+# Workspace-independent lint floor: no unsafe anywhere in this crate, and the
+# full clippy `all` group surfaces as warnings (CI runs clippy with
+# -D warnings, so these are enforced).
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
