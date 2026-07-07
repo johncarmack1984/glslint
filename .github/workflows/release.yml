@@ -4,7 +4,8 @@ name: release
 # the versions (Cargo.toml + the extension's package.json), updates the
 # changelog, and creates the tag + GitHub Release. That same run then builds the
 # per-platform binaries and uploads them to the release — one workflow, so there's
-# no cross-workflow trigger to fight.
+# no cross-workflow trigger to fight. CI runs first (workflow_call into ci.yml)
+# and gates release-please, so a release can never cut from a red main.
 
 on:
   push:
@@ -19,7 +20,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ci:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
   release-please:
+    needs: ci
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
