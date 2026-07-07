@@ -16,15 +16,20 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # Reads the channel from rust-toolchain.toml; brings built-in caching.
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
         with:
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
       - name: Install glslang (provides glslangValidator)
         run: sudo apt-get update && sudo apt-get install -y glslang-tools
       - name: Format
