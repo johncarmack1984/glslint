@@ -305,6 +305,7 @@ fn is_word(b: u8) -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)] // test code: unwrap IS the assertion
 mod tests {
     use super::*;
 

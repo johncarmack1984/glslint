@@ -175,6 +175,7 @@ fn is_ident(s: &str) -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)] // test code: unwrap IS the assertion
 mod tests {
     use super::*;
 
