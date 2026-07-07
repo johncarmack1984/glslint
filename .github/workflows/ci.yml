@@ -1,14 +1,15 @@
 name: CI
 
-# Build, lint, and test on every pull request and push to main. The toolchain
-# channel comes from rust-toolchain.toml. glslint shells out to glslangValidator
-# (the Khronos GLSL reference compiler), so CI installs glslang-tools to exercise
-# the real validation path.
+# Build, lint, and test on every pull request; on main this runs inside the
+# release workflow (workflow_call), which gates release-please on it, so a main
+# push gets exactly one CI run and a release can never cut from a red tree. The
+# toolchain channel comes from rust-toolchain.toml. glslint shells out to
+# glslangValidator (the Khronos GLSL reference compiler), so CI installs
+# glslang-tools to exercise the real validation path.
 
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_call:
 
 permissions:
   contents: read
