@@ -5,6 +5,14 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "A luma.gl/deck.gl-aware GLSL checker and language server"
 repository = "https://github.com/johncarmack1984/glslint"
+keywords = ["glsl", "shader", "webgl", "lsp", "linter"]
+categories = ["development-tools", "command-line-utilities", "graphics"]
+# Binary-only on purpose: `glslint` ships as the `check`/`lsp` commands, not as a
+# library. The assembler, the diagnostic line-mapper, and the symbol scanner are
+# the interesting internals, and their shapes are still moving — publishing them
+# as a lib would freeze that surface into semver. `autolib = false` makes the
+# choice explicit, so adding a src/lib.rs can't quietly export an API.
+autolib = false
 
 [dependencies]
 anyhow = "1.0.103"
