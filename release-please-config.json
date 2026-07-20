@@ -6,7 +6,11 @@
       "release-type": "rust",
       "extra-files": [
         { "type": "json", "path": "editors/vscode/package.json", "jsonpath": "$.version" },
-        { "type": "json", "path": "npm/glslint/package.json", "jsonpath": "$.version" }
+        { "type": "json", "path": "npm/glslint/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "npm/glslint/package.json", "jsonpath": "$.optionalDependencies['@glslint/darwin-arm64']" },
+        { "type": "json", "path": "npm/glslint/package.json", "jsonpath": "$.optionalDependencies['@glslint/darwin-x64']" },
+        { "type": "json", "path": "npm/glslint/package.json", "jsonpath": "$.optionalDependencies['@glslint/linux-x64']" },
+        { "type": "json", "path": "npm/glslint/package.json", "jsonpath": "$.optionalDependencies['@glslint/win32-x64']" }
       ]
     }
   }

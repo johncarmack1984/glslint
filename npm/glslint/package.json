@@ -36,9 +36,9 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "@glslint/darwin-arm64": "0.3.0",
-    "@glslint/darwin-x64": "0.3.0",
-    "@glslint/linux-x64": "0.3.0",
-    "@glslint/win32-x64": "0.3.0"
+    "@glslint/darwin-arm64": "0.3.1",
+    "@glslint/darwin-x64": "0.3.1",
+    "@glslint/linux-x64": "0.3.1",
+    "@glslint/win32-x64": "0.3.1"
   }
 }
