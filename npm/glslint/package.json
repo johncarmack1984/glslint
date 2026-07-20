@@ -1,0 +1,44 @@
+{
+  "name": "glslint",
+  "version": "0.2.0",
+  "description": "A luma.gl/deck.gl-aware GLSL checker and language server",
+  "keywords": [
+    "glsl",
+    "shader",
+    "deck.gl",
+    "luma.gl",
+    "webgl",
+    "lsp",
+    "linter"
+  ],
+  "homepage": "https://github.com/johncarmack1984/glslint#readme",
+  "bugs": {
+    "url": "https://github.com/johncarmack1984/glslint/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johncarmack1984/glslint.git",
+    "directory": "npm/glslint"
+  },
+  "license": "MIT OR Apache-2.0",
+  "bin": {
+    "glslint": "bin/glslint.js"
+  },
+  "main": "index.js",
+  "files": [
+    "bin/",
+    "index.js",
+    "platforms.json",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@glslint/darwin-arm64": "0.2.0",
+    "@glslint/darwin-x64": "0.2.0",
+    "@glslint/linux-x64": "0.2.0",
+    "@glslint/win32-x64": "0.2.0"
+  }
+}

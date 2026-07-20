@@ -1,3 +1,10 @@
 /target
 .env
 .env.*
+
+# Written by npm/prepare.mjs at release time: the generated per-platform
+# packages, and the license copies it stages into the wrapper.
+npm/@glslint/
+npm/glslint/LICENSE-*
+*.tgz
+node_modules/

@@ -40,6 +40,48 @@ jobs:
       - name: Test
         run: cargo test --locked
 
+  npm:
+    # Exercise the npm distribution end to end: lay out the packages, then run
+    # the real binary through the wrapper's shim. Without this, a broken
+    # resolver or a platform table that has drifted from the wrapper's
+    # optionalDependencies would only surface after publishing.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 'lts/*'
+      - name: Check the drift guard without touching tracked files
+        run: node npm/prepare.mjs --version 0.0.0 --dry-run
+      - name: Build
+        run: cargo build --locked
+      # One debug binary stands in for all four release assets: this checks the
+      # plumbing (layout, resolution, exec), not the cross-compiles.
+      - name: Stage it as the release assets
+        run: |
+          mkdir -p dist
+          for target in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu; do
+            cp target/debug/glslint "dist/glslint-$target"
+          done
+          cp target/debug/glslint dist/glslint-x86_64-pc-windows-msvc.exe
+      - name: Lay out the packages
+        run: node npm/prepare.mjs --version 0.0.0 --binaries dist
+      # Resolve the linux-x64 package the way an install would, so the wrapper's
+      # require.resolve finds it by walking up to the repo root's node_modules.
+      - name: Link the platform package as an installed dependency
+        run: |
+          mkdir -p node_modules/@glslint
+          ln -s ../../npm/@glslint/linux-x64 node_modules/@glslint/linux-x64
+      - name: Run glslint through the npm shim
+        run: |
+          # Transparent passthrough: the shim must report exactly what the
+          # binary does, and mirror its exit status (no args is usage, exit 2).
+          test "$(node npm/glslint/bin/glslint.js --version)" = "$(target/debug/glslint --version)"
+          node npm/glslint/bin/glslint.js && code=0 || code=$?
+          test "$code" = 2
+
   deny:
     runs-on: ubuntu-latest
     timeout-minutes: 10

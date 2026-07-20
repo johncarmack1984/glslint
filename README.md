@@ -13,6 +13,14 @@ sudo apt install glslang-tools  # Debian / Ubuntu
 
 On Windows it ships with the [Vulkan SDK](https://vulkan.lunarg.com/). glslint finds it on `PATH` (trying `glslangValidator`, then `glslang`); set `GLSLINT_GLSLANG` to point at a specific binary. When it is missing, glslint reports the install command for the platform it is running on rather than a bare "not found".
 
+## Install
+
+```sh
+cargo install --git https://github.com/johncarmack1984/glslint
+```
+
+An npm channel is wired up and ships on the next release: `npm install --save-dev glslint` will pull a prebuilt binary through a per-platform optional dependency, so a deck.gl project can use it with no Rust toolchain. The packaging lives in [`npm/`](npm/).
+
 ## Usage
 
 ```sh
