@@ -2,7 +2,7 @@
   "name": "glslint",
   "displayName": "glslint",
   "description": "luma.gl/deck.gl-aware GLSL diagnostics — an LSP client for the glslint binary.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "johncarmack1984",
   "license": "MIT OR Apache-2.0",
   "repository": {
