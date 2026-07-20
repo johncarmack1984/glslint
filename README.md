@@ -16,10 +16,13 @@ On Windows it ships with the [Vulkan SDK](https://vulkan.lunarg.com/). glslint f
 ## Install
 
 ```sh
-cargo install --git https://github.com/johncarmack1984/glslint
+cargo install glslint                    # Rust toolchain
+npm install --save-dev @glslint/cli      # prebuilt binary, no Rust toolchain
 ```
 
-An npm channel is wired up and ships on the next release: `npm install --save-dev glslint` will pull a prebuilt binary through a per-platform optional dependency, so a deck.gl project can use it with no Rust toolchain. The packaging lives in [`npm/`](npm/).
+The npm package pulls a prebuilt binary through a per-platform optional dependency (`@glslint/darwin-arm64` and friends), so a deck.gl project downloads one binary and needs no Rust. It installs a plain `glslint` command, so the scope only appears at install time. Prebuilt for macOS arm64 and x64, Linux x64, and Windows x64; anything else uses the cargo route. The packaging lives in [`npm/`](npm/).
+
+The unscoped npm name `glslint` is unavailable: npm's typosquatting filter rejects it as too close to `glslify`, `eslint`, `tslint`, and `dtslint`. Hence the scope.
 
 ## Usage
 

@@ -1,4 +1,4 @@
-# glslint
+# @glslint/cli
 
 A luma.gl / deck.gl-aware GLSL checker and language server, distributed as a prebuilt binary. No Rust toolchain needed.
 
@@ -18,12 +18,14 @@ On Windows it ships with the [Vulkan SDK](https://vulkan.lunarg.com/). glslint f
 ## Install
 
 ```sh
-npm install --save-dev glslint
+npm install --save-dev @glslint/cli
 ```
 
-The binary arrives through a per-platform optional dependency (`@glslint/darwin-arm64` and friends), so you download one binary rather than all of them. Prebuilt platforms: macOS arm64 and x64, Linux x64, Windows x64. On anything else, install with `cargo install --git https://github.com/johncarmack1984/glslint`.
+The binary arrives through a per-platform optional dependency (`@glslint/darwin-arm64` and friends), so you download one binary rather than all of them. Prebuilt platforms: macOS arm64 and x64, Linux x64, Windows x64. On anything else, install with `cargo install glslint`.
 
 ## Usage
+
+The package installs a `glslint` command, so the scope only appears when you install it:
 
 ```sh
 npx glslint check src/shaders/draw.vert.glsl   # one-shot, exit 1 on errors
@@ -35,7 +37,7 @@ npx glslint lsp                                # language server over stdio
 To resolve the binary yourself, for example to launch the language server from an editor extension without the wrapper process:
 
 ```js
-const { binaryPath } = require('glslint');
+const { binaryPath } = require('@glslint/cli');
 spawn(binaryPath(), ['lsp']);
 ```
 
