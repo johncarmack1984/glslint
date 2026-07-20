@@ -77,6 +77,53 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ needs.release-please.outputs.tag_name }}" "glslint-${{ matrix.target }}.exe" --clobber
 
+  npm:
+    # The npm channel: a `glslint` wrapper package whose optionalDependencies are
+    # per-platform packages holding the prebuilt binaries, so `npm i -D glslint`
+    # works with no Rust toolchain. Needs `build`, since it republishes exactly
+    # the binaries that job attached to the release.
+    needs: [release-please, build]
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # npm provenance attestation
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      TAG: ${{ needs.release-please.outputs.tag_name }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 'lts/*'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Download the release binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$TAG" --dir dist --pattern 'glslint-*'
+      - name: Lay out the packages
+        run: node npm/prepare.mjs --version "$TAG" --binaries dist
+      # Both publishes are skipped (not failed) when NPM_TOKEN is unset, matching
+      # the extension job: the release never breaks before npm is configured.
+      # Paths keep their `./` prefix — npm reads a bare `npm/glslint` as the
+      # GitHub shorthand for that org/repo, not as a directory.
+      - name: Publish the platform packages
+        if: ${{ env.NPM_TOKEN != '' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # Platform packages go first: the wrapper pins their exact versions, so
+        # they must exist before it becomes installable.
+        run: |
+          for dir in ./npm/@glslint/*/; do
+            npm publish "$dir" --access public --provenance
+          done
+      - name: Publish the wrapper package
+        if: ${{ env.NPM_TOKEN != '' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish ./npm/glslint --access public --provenance
+
   publish-extension:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created == 'true' }}

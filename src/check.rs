@@ -38,12 +38,7 @@ fn check_assembled(a: &Assembled) -> Vec<Diag> {
     let run = match run_glslang(a) {
         Ok(run) => run,
         Err(RunError::NotFound) => {
-            return vec![tool_error(
-                a,
-                "glslangValidator not found on PATH — install with `brew install glslang`, \
-                 or set GLSLINT_GLSLANG to its path"
-                    .to_string(),
-            )];
+            return vec![tool_error(a, missing_glslang_message())];
         }
         Err(RunError::BadOverride(e)) => {
             return vec![tool_error(
@@ -131,6 +126,27 @@ fn run_glslang(a: &Assembled) -> Result<GlslangRun, RunError> {
         });
     }
     Err(RunError::NotFound)
+}
+
+/// The missing-validator error, naming the install command for *this* platform.
+///
+/// This is the first thing a user hits on a machine without glslang, and the
+/// npm install path makes that the common case: `npm i -D glslint` brings the
+/// binary but not its Khronos dependency, and that audience has no reason to
+/// expect one. So the error names the exact command to run here rather than
+/// reporting a generic "not found" and leaving the user to search for the fix.
+fn missing_glslang_message() -> String {
+    let install = if cfg!(target_os = "macos") {
+        "install it with `brew install glslang`"
+    } else if cfg!(target_os = "windows") {
+        "install the Vulkan SDK, which ships glslangValidator.exe"
+    } else {
+        "install it with `apt install glslang-tools` (or your distro's glslang package)"
+    };
+    format!(
+        "glslangValidator not found on PATH — {install}, \
+         or set GLSLINT_GLSLANG to an existing binary"
+    )
 }
 
 /// The binaries to try, and whether the choice was forced via `GLSLINT_GLSLANG`
@@ -367,6 +383,28 @@ mod tests {
             target: PathBuf::from("/proj/draw.frag.glsl"),
             note: None,
         }
+    }
+
+    // --- missing-validator error: names the fix for the platform it's on ---
+
+    #[test]
+    fn missing_glslang_message_names_an_installer_and_the_override() {
+        let m = missing_glslang_message();
+        // The env override applies everywhere; the installer is platform-specific.
+        assert!(m.contains("GLSLINT_GLSLANG"), "no override hint: {m}");
+        let installer = if cfg!(target_os = "macos") {
+            "brew install glslang"
+        } else if cfg!(target_os = "windows") {
+            "Vulkan SDK"
+        } else {
+            "glslang-tools"
+        };
+        assert!(
+            m.contains(installer),
+            "no install hint for this platform: {m}"
+        );
+        // print_diag renders one diagnostic per line; a newline would split it.
+        assert!(!m.contains('\n'), "message must stay single-line: {m}");
     }
 
     // --- parse_located: the `<str>:<line>: 'token' : message` grammar ---

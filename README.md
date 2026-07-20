@@ -4,13 +4,22 @@ A luma.gl / deck.gl-aware GLSL checker and language server. Stock GLSL tools cho
 
 ## Requirements
 
-glslint shells out to `glslangValidator` (the Khronos GLSL reference compiler):
+glslint shells out to `glslangValidator` (the Khronos GLSL reference compiler). It is not bundled, so install it once:
 
 ```sh
-brew install glslang     # provides glslangValidator (and the newer `glslang`)
+brew install glslang            # macOS (provides glslangValidator and the newer `glslang`)
+sudo apt install glslang-tools  # Debian / Ubuntu
 ```
 
-glslint finds it on `PATH` (trying `glslangValidator`, then `glslang`); set `GLSLINT_GLSLANG` to point at a specific binary.
+On Windows it ships with the [Vulkan SDK](https://vulkan.lunarg.com/). glslint finds it on `PATH` (trying `glslangValidator`, then `glslang`); set `GLSLINT_GLSLANG` to point at a specific binary. When it is missing, glslint reports the install command for the platform it is running on rather than a bare "not found".
+
+## Install
+
+```sh
+cargo install --git https://github.com/johncarmack1984/glslint
+```
+
+An npm channel is wired up and ships on the next release: `npm install --save-dev glslint` will pull a prebuilt binary through a per-platform optional dependency, so a deck.gl project can use it with no Rust toolchain. The packaging lives in [`npm/`](npm/).
 
 ## Usage
 
