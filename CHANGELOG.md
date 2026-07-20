@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/johncarmack1984/glslint/compare/v0.2.0...v0.3.0) (2026-07-20)
+
+
+### Features
+
+* npm distribution channel ([#19](https://github.com/johncarmack1984/glslint/issues/19)) ([5ede062](https://github.com/johncarmack1984/glslint/commit/5ede0622aea619de2ed08cfc9ce98912085a44d3))
+
 ## [0.2.0](https://github.com/johncarmack1984/glslint/compare/v0.1.3...v0.2.0) (2026-06-24)
 
 

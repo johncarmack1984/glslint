@@ -1,6 +1,6 @@
 {
   "name": "glslint",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A luma.gl/deck.gl-aware GLSL checker and language server",
   "keywords": [
     "glsl",
