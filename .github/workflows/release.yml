@@ -83,19 +83,23 @@ jobs:
         run: gh release upload "${{ needs.release-please.outputs.tag_name }}" "glslint-${{ matrix.target }}.exe" --clobber
 
   npm:
-    # The npm channel: a `glslint` wrapper package whose optionalDependencies are
-    # per-platform packages holding the prebuilt binaries, so `npm i -D glslint`
-    # works with no Rust toolchain. Needs `build`, since it republishes exactly
-    # the binaries that job attached to the release.
+    # The npm channel: an `@glslint/cli` wrapper whose optionalDependencies are
+    # per-platform packages holding the prebuilt binaries, so a deck.gl project
+    # installs one binary and needs no Rust toolchain. Needs `build`, since it
+    # republishes exactly the binaries that job attached to the release.
+    #
+    # Publishes over OIDC trusted publishing: no stored token, and npm mints the
+    # provenance attestation itself, so `--provenance` must NOT be passed. The
+    # trusted publisher registered on npmjs.com pins this workflow by filename,
+    # so renaming release.yml breaks publishing until that config is updated.
     needs: [release-please, build]
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
-      id-token: write # npm provenance attestation
+      id-token: write # the OIDC credential npm authenticates with
     env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       TAG: ${{ needs.release-please.outputs.tag_name }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -103,31 +107,26 @@ jobs:
         with:
           node-version: 'lts/*'
           registry-url: 'https://registry.npmjs.org'
+      # Trusted publishing wants npm >= 11.5.1, ahead of the npm bundled with
+      # the Node LTS images.
+      - name: Update npm
+        run: npm install -g npm@latest
       - name: Download the release binaries
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release download "$TAG" --dir dist --pattern 'glslint-*'
       - name: Lay out the packages
         run: node npm/prepare.mjs --version "$TAG" --binaries dist
-      # Both publishes are skipped (not failed) when NPM_TOKEN is unset, matching
-      # the extension job: the release never breaks before npm is configured.
-      # Paths keep their `./` prefix — npm reads a bare `npm/glslint` as the
-      # GitHub shorthand for that org/repo, not as a directory.
-      - name: Publish the platform packages
-        if: ${{ env.NPM_TOKEN != '' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        # Platform packages go first: the wrapper pins their exact versions, so
-        # they must exist before it becomes installable.
+      # Platform packages go first: the wrapper pins their exact versions, so
+      # they must exist before it becomes installable. Paths keep their `./`
+      # prefix — npm reads a bare `npm/glslint` as the GitHub shorthand for that
+      # org/repo, not as a directory.
+      - name: Publish
         run: |
           for dir in ./npm/@glslint/*/; do
-            npm publish "$dir" --access public --provenance
+            npm publish "$dir" --access public
           done
-      - name: Publish the wrapper package
-        if: ${{ env.NPM_TOKEN != '' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish ./npm/glslint --access public --provenance
+          npm publish ./npm/glslint --access public
 
   publish-extension:
     needs: release-please
