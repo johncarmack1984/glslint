@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/johncarmack1984/glslint/compare/v0.3.0...v0.3.1) (2026-07-20)
+
+
+### Bug Fixes
+
+* publish the npm packages over OIDC trusted publishing ([#23](https://github.com/johncarmack1984/glslint/issues/23)) ([d7fa0bb](https://github.com/johncarmack1984/glslint/commit/d7fa0bbd42d21abac7d8d330ef39c7f4ea5e96e6))
+
 ## [0.3.0](https://github.com/johncarmack1984/glslint/compare/v0.2.0...v0.3.0) (2026-07-20)
 
 
