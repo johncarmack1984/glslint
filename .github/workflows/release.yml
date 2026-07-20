@@ -6,6 +6,11 @@ name: release
 # per-platform binaries and uploads them to the release — one workflow, so there's
 # no cross-workflow trigger to fight. CI runs first (workflow_call into ci.yml)
 # and gates release-please, so a release can never cut from a red main.
+#
+# Give every PR a conventional-commit title (`feat:`, `fix:`, `ci:`). Squash is
+# the merge method here, and it takes its subject from the PR title whenever the
+# branch holds more than one commit, so a plain title lands on main with no type
+# and release-please skips the release entirely.
 
 on:
   push:
