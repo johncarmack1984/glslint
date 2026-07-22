@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/johncarmack1984/glslint/compare/v0.3.1...v0.4.0) (2026-07-22)
+
+
+### Features
+
+* lint GLSL in JS/TS tagged template literals ([#28](https://github.com/johncarmack1984/glslint/issues/28)) ([db05149](https://github.com/johncarmack1984/glslint/commit/db0514966d404d931e7e0caa25f0ea2c7fa67f53))
+
 ## [0.3.1](https://github.com/johncarmack1984/glslint/compare/v0.3.0...v0.3.1) (2026-07-20)
 
 
