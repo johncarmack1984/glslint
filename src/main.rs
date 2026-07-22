@@ -16,6 +16,7 @@ mod deck;
 mod derive;
 mod diagnostics;
 mod drift;
+mod embed;
 mod lints;
 mod lsp;
 mod symbols;
@@ -51,6 +52,7 @@ fn run_check(files: &[String]) {
 
     let mut errors = 0usize;
     let mut warnings = 0usize;
+    let mut notes = 0usize;
 
     for f in files {
         match check::check_file(Path::new(f)) {
@@ -60,6 +62,7 @@ fn run_check(files: &[String]) {
                     match d.severity {
                         Severity::Error => errors += 1,
                         Severity::Warning => warnings += 1,
+                        Severity::Note => notes += 1,
                     }
                 }
             }
@@ -70,7 +73,11 @@ fn run_check(files: &[String]) {
         }
     }
 
-    eprintln!("\nglslint: {errors} error(s), {warnings} warning(s)");
+    if notes > 0 {
+        eprintln!("\nglslint: {errors} error(s), {warnings} warning(s), {notes} note(s)");
+    } else {
+        eprintln!("\nglslint: {errors} error(s), {warnings} warning(s)");
+    }
     if errors > 0 {
         std::process::exit(1);
     }

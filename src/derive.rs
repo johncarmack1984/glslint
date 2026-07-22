@@ -36,13 +36,27 @@ pub fn derive(shader: &Path) -> Option<Derived> {
 }
 
 fn derive_from(text: &str, ts: &Path, shader_name: &str) -> Option<Derived> {
-    let imports = es_imports(text);
     // local binding for this shader file, e.g. `DRAW_VS`
-    let binding = imports
-        .iter()
+    let binding = es_imports(text)
+        .into_iter()
         .find(|(_, p)| strip_query(p).ends_with(shader_name))
-        .map(|(n, _)| n.clone())?;
-    let module_ids = model_modules_for(text, &binding)?;
+        .map(|(n, _)| n)?;
+    resolve_modules(text, ts, &binding)
+}
+
+/// Resolve the luma modules for an already-known binding (a shader assigned to
+/// `binding` in a `new Model({ vs: binding, modules })` call). Used for embedded
+/// tagged-template shaders, whose binding comes from the `const NAME = glsl`…``
+/// rather than from a `?raw` import. `None` when nothing resolves.
+pub fn derive_for_binding(text: &str, ts: &Path, binding: &str) -> Option<Derived> {
+    resolve_modules(text, ts, binding)
+}
+
+/// Follow `binding`'s `new Model({ modules })` call to each module's GLSL source
+/// (local module) or the deck builtins (a package import).
+fn resolve_modules(text: &str, ts: &Path, binding: &str) -> Option<Derived> {
+    let imports = es_imports(text);
+    let module_ids = model_modules_for(text, binding)?;
 
     let ts_dir = ts.parent()?;
     let mut modules = Vec::new();

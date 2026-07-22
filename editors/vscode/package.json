@@ -30,7 +30,11 @@
     "Programming Languages"
   ],
   "activationEvents": [
-    "onLanguage:glsl"
+    "onLanguage:glsl",
+    "onLanguage:typescript",
+    "onLanguage:typescriptreact",
+    "onLanguage:javascript",
+    "onLanguage:javascriptreact"
   ],
   "main": "./extension.js",
   "contributes": {

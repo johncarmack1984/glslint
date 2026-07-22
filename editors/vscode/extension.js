@@ -103,7 +103,18 @@ async function activate(context) {
   }
 
   const serverOptions = { command, args: ["lsp"] };
-  const clientOptions = { documentSelector: [{ scheme: "file", language: "glsl" }] };
+  // GLSL files, plus JS/TS hosts for shaders written inline in `glsl`…`` tagged
+  // template literals. For JS/TS the server publishes diagnostics only (mapped to
+  // the template's span); the symbol features stay GLSL-file-only.
+  const clientOptions = {
+    documentSelector: [
+      { scheme: "file", language: "glsl" },
+      { scheme: "file", language: "typescript" },
+      { scheme: "file", language: "typescriptreact" },
+      { scheme: "file", language: "javascript" },
+      { scheme: "file", language: "javascriptreact" },
+    ],
+  };
 
   client = new LanguageClient("glslint", "glslint", serverOptions, clientOptions);
   client.start().catch((err) => {

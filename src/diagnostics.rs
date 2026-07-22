@@ -7,6 +7,10 @@ use std::path::PathBuf;
 pub enum Severity {
     Error,
     Warning,
+    /// Informational — never a failure. Currently the "embedded shader has a
+    /// `${…}` interpolation, validated with lints only" note. Doesn't count toward
+    /// the CLI's exit status; maps to LSP `INFORMATION`.
+    Note,
 }
 
 impl Severity {
@@ -14,13 +18,15 @@ impl Severity {
         match self {
             Severity::Error => "error",
             Severity::Warning => "warning",
+            Severity::Note => "note",
         }
     }
-    /// ANSI color for the severity label (red / yellow).
+    /// ANSI color for the severity label (red / yellow / cyan).
     fn color(self) -> &'static str {
         match self {
             Severity::Error => "\x1b[31m",
             Severity::Warning => "\x1b[33m",
+            Severity::Note => "\x1b[36m",
         }
     }
 }

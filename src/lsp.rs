@@ -108,6 +108,12 @@ impl Backend {
     fn index_for(&self, uri: &Url) -> Option<(String, std::path::PathBuf, symbols::SymbolIndex)> {
         let text = locked(&self.docs).get(uri)?.clone();
         let path = uri.to_file_path().ok()?;
+        // Symbol features (hover/completion/definition/outline) operate on a whole
+        // GLSL file. A JS/TS host isn't one — it only gets embedded diagnostics —
+        // so don't hand its text to the assembler as if it were a shader.
+        if crate::embed::is_js_ts(&path) {
+            return None;
+        }
         let config = Config::resolve_for(&path);
         let assembled = assemble::assemble(&path, &text, &config);
         Some((text, path, symbols::index(&assembled)))
@@ -257,6 +263,7 @@ fn to_lsp(d: &Diag, line_text: Option<&str>) -> Diagnostic {
         severity: Some(match d.severity {
             Severity::Error => DiagnosticSeverity::ERROR,
             Severity::Warning => DiagnosticSeverity::WARNING,
+            Severity::Note => DiagnosticSeverity::INFORMATION,
         }),
         source: Some(format!("glslint/{}", d.source)),
         message: d.message.clone(),

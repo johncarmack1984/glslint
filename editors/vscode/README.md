@@ -1,6 +1,6 @@
 # glslint — VS Code / Cursor extension
 
-A thin LSP client that runs the `glslint` binary in `lsp` mode and surfaces its diagnostics on GLSL files. It also ships GLSL syntax highlighting (a TextMate grammar) plus bracket/comment editing config. Works in VS Code and Cursor (identical extension API).
+A thin LSP client that runs the `glslint` binary in `lsp` mode and surfaces its diagnostics on GLSL files — and on GLSL written inline in JS/TS `glsl`…`` tagged template literals. It also ships GLSL syntax highlighting (a TextMate grammar) plus bracket/comment editing config. Works in VS Code and Cursor (identical extension API).
 
 ## Setup
 
@@ -43,3 +43,17 @@ That's the point of glslint: `wind` is declared in a *separate* `windUniforms.gl
 **Hover** a uniform-block member like `wind.uMin` to see its type, and **cmd-click** (Go to Definition) to jump straight into `windUniforms.glsl` — the cross-module navigation that stock GLSL tooling can't do. Hover/jump also work for top-level `uniform`/`in`/`out` declarations and function definitions; hovering a built-in — deck's `project_position_to_clipspace` or core GLSL like `clamp`/`texture`/`mix` — shows its signature, and cmd-clicking a deck builtin jumps into the real deck source in `node_modules`.
 
 Type `wind.` for **member completion** (the whole uniform block), and open the **Outline** view (or breadcrumbs) for the file's **document symbols** — its uniforms, functions, and any blocks declared in it.
+
+## Shaders inside JS/TS
+
+The extension also watches `.ts`/`.tsx`/`.js`/`.jsx` files. A shader written inline as a `glsl`…`` tagged template — or a `/* glsl */ `…`` marked template — is extracted and validated in place, with diagnostics mapped back to the exact line and column **in the `.ts` file**:
+
+```ts
+const fs = glsl`#version 300 es
+precision highp float;
+out vec4 fragColor;
+void main() { fragColor = vec4(nope, 1.0); }  // ← red squiggle under `nope`
+`;
+```
+
+A template that contains a `${…}` interpolation can't be reconstructed into a complete shader (the injected value may declare or use symbols glslint can't see), so it's checked with the source-level lints only and gets an informational note; templates with no interpolation are fully validated. The GLSL-only features (hover, go-to-definition, completion, outline) stay on `.glsl` files.
