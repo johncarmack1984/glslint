@@ -145,6 +145,29 @@ pub fn assemble(target: &Path, source: &str, config: &Config) -> Assembled {
     }
 }
 
+/// Assemble a shader lifted from a JS/TS tagged template. The stage can't come
+/// from the filename here (the host is a `.ts`/`.js` file), so it's passed in —
+/// inferred from the shader's own text/binding by `embed`. `has_entry` is whether
+/// the template has its own `main`: with one, it's a full stage shader; without,
+/// it's a chunk wrapped in a synthetic `main` for syntax-only checking. Either way
+/// the wrap/validate happens under `stage`, so a vertex-only builtin (e.g.
+/// `gl_VertexID`) in a `gl_Position`-free shader isn't rejected under the fragment
+/// stage. `target` is the host file, so every mapped line points there; `embed`
+/// then offsets those lines into the template's span.
+pub fn assemble_embedded(
+    target: &Path,
+    source: &str,
+    config: &Config,
+    stage: Stage,
+    has_entry: bool,
+) -> Assembled {
+    if has_entry {
+        assemble_stage(target, source, config, stage)
+    } else {
+        wrap_as(target, source, stage)
+    }
+}
+
 fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) -> Assembled {
     let mut b = Builder::new();
     let lines: Vec<&str> = source.lines().collect();
@@ -214,6 +237,13 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
 /// on its own. Wrap it in a minimal fragment shell so its declarations still get
 /// a real syntax/type pass.
 fn wrap_fragment(target: &Path, source: &str) -> Assembled {
+    wrap_as(target, source, Stage::Fragment)
+}
+
+/// Wrap a fragment (no `main` of its own) in a minimal shell under `stage`, so its
+/// declarations get a syntax/type pass. The stage matters: a helper that uses a
+/// vertex-only builtin must be wrapped as a vertex shader, not a fragment one.
+fn wrap_as(target: &Path, source: &str, stage: Stage) -> Assembled {
     let mut b = Builder::new();
     b.push_synthetic(DEFAULT_VERSION);
     b.push_synthetic(DEFAULT_PRECISION);
@@ -227,11 +257,7 @@ fn wrap_fragment(target: &Path, source: &str) -> Assembled {
         );
     }
     b.push_synthetic("void main() {}");
-    b.finish(
-        Stage::Fragment,
-        target,
-        Some("module fragment (syntax-only)"),
-    )
+    b.finish(stage, target, Some("module fragment (syntax-only)"))
 }
 
 /// True if two paths point at the same file. Canonicalize when possible; fall

@@ -10,6 +10,7 @@
 use crate::assemble::{self, Assembled};
 use crate::config::Config;
 use crate::diagnostics::{Diag, Severity};
+use crate::embed::{self, Embedded};
 use crate::lints;
 use std::io::{ErrorKind, Write};
 use std::path::Path;
@@ -21,6 +22,12 @@ pub fn check_file(path: &Path) -> anyhow::Result<Vec<Diag>> {
 }
 
 pub fn check_source(path: &Path, source: &str) -> Vec<Diag> {
+    // A JS/TS host: lint the GLSL embedded in its `glsl`…`` tagged templates,
+    // rather than treat the whole file as one shader.
+    if embed::is_js_ts(path) {
+        return check_embedded(path, source);
+    }
+
     let config = Config::resolve_for(path);
     let assembled = assemble::assemble(path, source, &config);
 
@@ -32,6 +39,97 @@ pub fn check_source(path: &Path, source: &str) -> Vec<Diag> {
     }
     diags.sort_by(|a, b| (a.path.as_path(), a.line, a.col).cmp(&(b.path.as_path(), b.line, b.col)));
     diags
+}
+
+/// Lint every shader embedded in a JS/TS file, mapping each diagnostic from the
+/// shader's own line/col into the host file's template span.
+fn check_embedded(host: &Path, source: &str) -> Vec<Diag> {
+    let mut diags = Vec::new();
+    for emb in embed::extract(source) {
+        diags.extend(check_one_embedded(host, source, &emb));
+    }
+    diags.sort_by(|a, b| (a.path.as_path(), a.line, a.col).cmp(&(b.path.as_path(), b.line, b.col)));
+    diags
+}
+
+fn check_one_embedded(host: &Path, source: &str, emb: &Embedded) -> Vec<Diag> {
+    let mut out = Vec::new();
+
+    // The source-level lints match the author's own tokens, so they're valid even
+    // when the shader is incomplete (an interpolation we couldn't resolve).
+    for d in lints::run_lints(host, &emb.source) {
+        out.push(remap(d, host, emb));
+    }
+
+    if emb.has_interp {
+        // A `${…}` interpolation makes this an incomplete translation unit — the
+        // injected value can define or use symbols we can't see. Skip the
+        // validator rather than report errors that might be our own doing, and
+        // leave a note so the partial coverage is visible, not silent.
+        out.push(interp_note(host, emb));
+        return out;
+    }
+
+    let config = config_for_embedded(host, source, emb);
+    let assembled =
+        assemble::assemble_embedded(host, &emb.source, &config, emb.stage, emb.has_entry);
+    for d in check_assembled(&assembled) {
+        out.push(remap(d, host, emb));
+    }
+    out
+}
+
+/// Resolve the embedded shader's luma modules from a `new Model({ modules })` call
+/// that references its binding, when discoverable; otherwise fall back to the
+/// host file's directory config (a `glsl-lsp.toml` or sibling `*Uniforms.glsl`).
+fn config_for_embedded(host: &Path, source: &str, emb: &Embedded) -> Config {
+    if let Some(name) = &emb.name
+        && let Some(d) = crate::derive::derive_for_binding(source, host, name)
+    {
+        return Config {
+            preludes: Vec::new(),
+            modules: d.modules,
+            use_builtin_prelude: d.use_builtin_prelude,
+        };
+    }
+    Config::resolve_for(host)
+}
+
+/// Offset a diagnostic on the embedded shader (`path == host`) into the host
+/// file's template span. Diagnostics that already point at an injected module file
+/// (a different path) are left untouched.
+fn remap(d: Diag, host: &Path, emb: &Embedded) -> Diag {
+    if d.path.as_path() != host {
+        return d;
+    }
+    let pos = emb.map(d.line, d.col);
+    Diag {
+        path: host.to_path_buf(),
+        line: pos.line,
+        col: pos.col,
+        ..d
+    }
+}
+
+/// The "checked with lints only" note for an interpolated template, pinned to the
+/// template's opening position in the host file.
+fn interp_note(host: &Path, emb: &Embedded) -> Diag {
+    let pos = emb
+        .line_map
+        .first()
+        .copied()
+        .unwrap_or(embed::HostPos { line: 1, col: 1 });
+    Diag {
+        path: host.to_path_buf(),
+        line: pos.line,
+        col: pos.col,
+        len: 1,
+        severity: Severity::Note,
+        message: "embedded shader has a ${…} interpolation — checked with lints only \
+                  (glslang validation skipped)"
+            .to_string(),
+        source: "embed",
+    }
 }
 
 fn check_assembled(a: &Assembled) -> Vec<Diag> {
@@ -561,5 +659,95 @@ mod tests {
         assert!(!diags.is_empty());
         assert!(diags.iter().all(|d| d.line == 1));
         assert!(diags.iter().any(|d| d.message.contains("version")));
+    }
+
+    // --- embedded shaders: JS/TS tagged templates ---
+
+    /// Whether glslangValidator/glslang is on PATH, so the validation-dependent
+    /// assertions can run (they do in CI, which installs glslang-tools).
+    fn glslang_on_path() -> bool {
+        ["glslangValidator", "glslang"].iter().any(|b| {
+            Command::new(b)
+                .arg("--version")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok()
+        })
+    }
+
+    #[test]
+    fn embedded_interpolation_is_lints_only_with_a_note() {
+        // The interpolation path never touches glslang, so this runs everywhere.
+        let src = include_str!("../tests/fixtures/interpolated.ts");
+        let diags = check_source(Path::new("interpolated.ts"), src);
+
+        // One note per interpolated template, at each template's opening line (the
+        // `fs` and `legacy` declarations, at host lines 3 and 14).
+        let notes: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == Severity::Note)
+            .collect();
+        assert_eq!(notes.len(), 2, "diags: {diags:#?}");
+        assert_eq!(notes[0].line, 3);
+        assert_eq!(notes[1].line, 14);
+        assert!(notes.iter().all(|d| d.source == "embed"));
+
+        // The ES3-legacy lints still fire through the interpolation, mapped to the
+        // host lines: `varying` on line 16, `gl_FragColor` on line 17.
+        let varying = diags
+            .iter()
+            .find(|d| d.message.contains("varying"))
+            .expect("varying lint");
+        assert_eq!(varying.severity, Severity::Warning);
+        assert_eq!(varying.line, 16);
+        let frag = diags
+            .iter()
+            .find(|d| d.message.contains("gl_FragColor"))
+            .expect("gl_FragColor lint");
+        assert_eq!(frag.line, 17);
+
+        // No glslang errors — the validator was skipped for both templates.
+        assert!(diags.iter().all(|d| d.source != "glslang"));
+    }
+
+    #[test]
+    fn embedded_error_maps_to_the_host_template_line() {
+        let src = include_str!("../tests/fixtures/tagged.ts");
+        let diags = check_source(Path::new("tagged.ts"), src);
+
+        if glslang_on_path() {
+            // The undeclared `nope` sits on host line 8; the clean `vs` yields
+            // nothing. Exactly one glslang error, on line 8.
+            let errs: Vec<_> = diags
+                .iter()
+                .filter(|d| d.severity == Severity::Error)
+                .collect();
+            assert_eq!(errs.len(), 1, "diags: {diags:#?}");
+            assert_eq!(errs[0].line, 8);
+            assert_eq!(errs[0].source, "glslang");
+            assert!(errs[0].message.contains("nope"));
+        } else {
+            // Without a validator, the missing-tool error is still mapped into the
+            // template span (the `fs` template opens on host line 4), never left at
+            // the assembled unit's line 1.
+            assert!(diags.iter().any(|d| d.line == 4 && d.source == "glslint"));
+        }
+    }
+
+    #[test]
+    fn embedded_stage_guess_does_not_false_positive_on_valid_shaders() {
+        // Regression for the vertex-only-builtin class: a `gl_Position`-free vertex
+        // shader (transform feedback) and a plain fragment shader are both valid and
+        // must draw no error, even though neither has an obvious stage signal.
+        if !glslang_on_path() {
+            return;
+        }
+        let src = include_str!("../tests/fixtures/stages.ts");
+        let diags = check_source(Path::new("stages.ts"), src);
+        assert!(
+            diags.iter().all(|d| d.severity != Severity::Error),
+            "unexpected errors on valid shaders: {diags:#?}"
+        );
     }
 }
