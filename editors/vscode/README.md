@@ -25,7 +25,7 @@ cd editors/vscode && npm install
 ## Run it
 
 - **Dev host (fastest):** open the `editors/vscode` folder in VS Code/Cursor and press `F5`. That launches an Extension Development Host; open your `deck-wind-layer` folder in it and open a shader (e.g. `src/shaders/draw.vert.glsl`).
-- **Install for real:** `npx @vscode/vsce package` here, then install the resulting `.vsix` (`code --install-extension glslint-0.1.0.vsix`).
+- **Install for real:** `npx @vscode/vsce package` here, then install the resulting `.vsix` (`code --install-extension glslint-<version>.vsix`).
 
 If you didn't `cargo install` (e.g. you want the debug binary), point the setting at it:
 ```json

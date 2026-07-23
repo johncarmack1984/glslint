@@ -29,6 +29,7 @@ The package installs a `glslint` command, so the scope only appears when you ins
 
 ```sh
 npx glslint check src/shaders/draw.vert.glsl   # one-shot, exit 1 on errors
+npx glslint check 'src/**/*.ts'                # lint GLSL in JS/TS tagged templates
 npx glslint lsp                                # language server over stdio
 ```
 
