@@ -25,12 +25,20 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Reads the channel from rust-toolchain.toml; brings built-in caching.
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
         with:
           components: clippy, rustfmt
+          cache: "false"
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cache-targets: "false"
       - name: Install glslang (provides glslangValidator)
         run: sudo apt-get update && sudo apt-get install -y glslang-tools
       - name: Format
@@ -39,6 +47,9 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: Test
         run: cargo test --locked
+      - name: sccache stats
+        if: ${{ always() }}
+        run: sccache --show-stats
 
   npm:
     # Exercise the npm distribution end to end: lay out the packages, then run
@@ -47,9 +58,19 @@ jobs:
     # optionalDependencies would only surface after publishing.
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        with:
+          cache: "false"
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cache-targets: "false"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 'lts/*'
@@ -81,6 +102,9 @@ jobs:
           test "$(node npm/glslint/bin/glslint.js --version)" = "$(target/debug/glslint --version)"
           node npm/glslint/bin/glslint.js && code=0 || code=$?
           test "$code" = 2
+      - name: sccache stats
+        if: ${{ always() }}
+        run: sccache --show-stats
 
   deny:
     runs-on: ubuntu-latest
