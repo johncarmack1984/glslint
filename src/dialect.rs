@@ -27,6 +27,7 @@
 //! can't itself be the source of a type error.
 
 use crate::assemble::Stage;
+use std::path::Path;
 
 /// One directive-expansion rule. Matches `#pragma <ns>: <verb> <args…>` and
 /// rewrites that single line, in place, into the GLSL declarations named by the
@@ -85,6 +86,16 @@ pub struct Dialect {
     /// A wrapper appended after the body (e.g. a `main` that calls `mainImage`),
     /// used only when the source has no `main` of its own.
     pub epilogue: Option<String>,
+    /// Sibling shared-library files to inject (verbatim, mapped to their own path)
+    /// when they exist next to the target, in order. This resolves an ecosystem's
+    /// shared shader functions the same way deck builtins are — implicit globals
+    /// the ecosystem's build concatenates in — but from its real source, so the
+    /// signatures never drift. maplibre's `_prelude.vertex.glsl` +
+    /// `_projection_mercator.vertex.glsl` are the canonical case. Earlier files are
+    /// injected first, so a file may depend on symbols an earlier one declares.
+    pub prelude_files_vertex: Vec<String>,
+    /// Fragment-stage counterpart of `prelude_files_vertex`.
+    pub prelude_files_fragment: Vec<String>,
     /// Directive-expansion rules.
     pub rules: Vec<Rule>,
     /// Whether the deck.gl builtin prelude still applies. A non-deck dialect
@@ -101,6 +112,15 @@ impl Dialect {
             Stage::Compute => &None,
         };
         specific.as_deref().or(self.prelude_any.as_deref())
+    }
+
+    /// The sibling shared-library basenames to inject for `stage`, in order.
+    pub fn prelude_files(&self, stage: Stage) -> &[String] {
+        match stage {
+            Stage::Vertex => &self.prelude_files_vertex,
+            Stage::Fragment => &self.prelude_files_fragment,
+            Stage::Compute => &[],
+        }
     }
 
     /// Try to expand one source `line` under `stage`. Returns the replacement
@@ -197,14 +217,15 @@ impl Default for Preference {
     }
 }
 
-/// Resolve a concrete [`Dialect`] for `source`: the base is the named preset, else
-/// the auto-detected dialect, else none; project-local rules and prelude are then
-/// layered on top (rules take precedence, prelude composes). Returns `None` when
-/// nothing applies, so `assemble` does no dialect work.
-pub fn resolve(pref: &Preference, source: &str) -> Option<Dialect> {
+/// Resolve a concrete [`Dialect`] for a shader: the base is the named preset, else
+/// the dialect auto-detected from `source` and its directory `dir`, else none;
+/// project-local rules and prelude are then layered on top (rules take precedence,
+/// prelude composes). Returns `None` when nothing applies, so `assemble` does no
+/// dialect work.
+pub fn resolve(pref: &Preference, source: &str, dir: &Path) -> Option<Dialect> {
     let base = match pref.preset.as_deref() {
         Some(name) => by_name(name),
-        None if pref.auto => autodetect(source),
+        None if pref.auto => autodetect(source, dir),
         None => None,
     };
 
@@ -245,9 +266,10 @@ pub fn by_name(name: &str) -> Option<Dialect> {
     }
 }
 
-/// Pick a dialect from `source`'s tell-tale signatures. Only fires for
-/// unmistakable markers, so a plain deck/luma shader is never misclassified.
-pub fn autodetect(source: &str) -> Option<Dialect> {
+/// Pick a dialect from a shader's tell-tale signatures — its `source` and its
+/// directory `dir`. Only fires for unmistakable markers, so a plain deck/luma
+/// shader is never misclassified.
+pub fn autodetect(source: &str, dir: &Path) -> Option<Dialect> {
     if source.contains("#pragma maplibre:") || source.contains("#pragma mapbox:") {
         return Some(maplibre());
     }
@@ -258,6 +280,15 @@ pub fn autodetect(source: &str) -> Option<Dialect> {
         .contains("voidmainImage(")
     {
         return Some(shadertoy());
+    }
+    // Environmental: a shader sitting next to maplibre's shared library is a
+    // maplibre shader even without a pragma. The pragma-free ones (background,
+    // clipping_mask, depth, …) still lean on `projectTile`, `fragColor`, and
+    // `u_projection_matrix` straight from that library, so they need it injected
+    // too. The `_prelude.*.glsl` basenames are maplibre-specific enough to be a
+    // safe signal — this is how deck is recognized by its package on disk.
+    if dir.join("_prelude.vertex.glsl").is_file() || dir.join("_prelude.fragment.glsl").is_file() {
+        return Some(maplibre());
     }
     None
 }
@@ -270,6 +301,13 @@ pub fn autodetect(source: &str) -> Option<Dialect> {
 /// defines `HAS_UNIFORM_u_*`, so glslang's preprocessor takes the data-driven
 /// branch — the one that exercises the most symbols. A project that wants the
 /// uniform branch checked instead can `#define HAS_UNIFORM_u_<name>` via a prelude.
+///
+/// It also injects maplibre's shared shader library — the sibling `_prelude` and
+/// `_projection_mercator` files the build concatenates ahead of every shader — so
+/// the functions they provide (`projectTile`, `projectLineThickness`,
+/// `unpack_mix_color`, …) and the globals they declare (`u_projection_matrix`,
+/// `PI`) resolve. Mercator is the canonical projection; its `projectTile`
+/// signatures are identical to globe's, so they satisfy a globe shader too.
 pub fn maplibre() -> Dialect {
     let mut rules = Vec::new();
     for ns in ["maplibre", "mapbox"] {
@@ -325,6 +363,14 @@ pub fn maplibre() -> Dialect {
         name: "maplibre".into(),
         deck: false,
         rules,
+        prelude_files_vertex: vec![
+            "_prelude.vertex.glsl".into(),
+            "_projection_mercator.vertex.glsl".into(),
+        ],
+        prelude_files_fragment: vec![
+            "_prelude.fragment.glsl".into(),
+            "_projection_mercator.fragment.glsl".into(),
+        ],
         ..Default::default()
     }
 }
@@ -457,18 +503,43 @@ mod tests {
 
     #[test]
     fn autodetect_recognizes_maplibre_and_shadertoy() {
+        // A directory with no maplibre shared library, so only source signatures
+        // can fire.
+        let bare = Path::new("/glslint-nonexistent-test-dir");
         assert_eq!(
-            autodetect("#pragma maplibre: define lowp float opacity\n").map(|d| d.name),
+            autodetect("#pragma maplibre: define lowp float opacity\n", bare).map(|d| d.name),
             Some("maplibre".to_string())
         );
         assert_eq!(
-            autodetect("void mainImage( out vec4 c, in vec2 p ) {}\n").map(|d| d.name),
+            autodetect("void mainImage( out vec4 c, in vec2 p ) {}\n", bare).map(|d| d.name),
             Some("shadertoy".to_string())
         );
         assert_eq!(
-            autodetect("out vec4 c;\nvoid main(){}\n").map(|d| d.name),
+            autodetect("out vec4 c;\nvoid main(){}\n", bare).map(|d| d.name),
             None
         );
+    }
+
+    #[test]
+    fn autodetect_fires_on_a_sibling_maplibre_library() {
+        // A pragma-free shader (background, clipping_mask, …) is still a maplibre
+        // shader when it sits next to the shared `_prelude.*.glsl` library.
+        let dir = std::env::temp_dir().join(format!(
+            "glslint-detect-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = "void main() { gl_Position = projectTile(vec2(0.0)); }\n";
+        // No library file yet → no signature.
+        assert_eq!(autodetect(src, &dir).map(|d| d.name), None);
+        // Drop the library in → detected as maplibre.
+        std::fs::write(dir.join("_prelude.vertex.glsl"), "// lib\n").unwrap();
+        assert_eq!(
+            autodetect(src, &dir).map(|d| d.name),
+            Some("maplibre".into())
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -477,4 +548,6 @@ mod tests {
         assert!(has_main("void  main(){}"));
         assert!(!has_main("void mainImage(out vec4 c, in vec2 p){}"));
     }
+
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 }
