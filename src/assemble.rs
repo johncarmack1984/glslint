@@ -187,8 +187,10 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
     let lines: Vec<&str> = source.lines().collect();
 
     // Resolve the shader dialect (maplibre pragmas, shadertoy uniforms, project
-    // rules) for this source. `None` => no dialect handling, the deck/luma path.
-    let dialect = crate::dialect::resolve(&config.dialect, source);
+    // rules) for this shader — detection keys on the source and its directory.
+    // `None` => no dialect handling, the deck/luma path.
+    let dir = target.parent().unwrap_or(Path::new("."));
+    let dialect = crate::dialect::resolve(&config.dialect, source, dir);
 
     // A `#version` directive must precede all code, so hoist the target's own to
     // the top (it's dropped from the body below) and map it back to its real line
@@ -219,6 +221,22 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
         && let Some(p) = &d.prelude_extra
     {
         b.push_synthetic(p);
+    }
+
+    // A dialect's shared shader library: sibling files the ecosystem's build
+    // concatenates ahead of every shader (maplibre's `_prelude`/`_projection_*`).
+    // Injected verbatim and mapped to their own path, so `projectTile` &c. resolve
+    // and a diagnostic inside one lands on that file, not the shader under check.
+    if let Some(d) = &dialect {
+        for name in d.prelude_files(stage) {
+            let path = dir.join(name);
+            if same_file(&path, target) {
+                continue;
+            }
+            if let Ok(c) = std::fs::read_to_string(&path) {
+                b.push_block(&c, &path);
+            }
+        }
     }
 
     // The deck builtin prelude applies unless a non-deck dialect took over.
@@ -439,4 +457,44 @@ mod tests {
         assert!(a.source.contains("void main()"));
         assert_eq!(a.source.lines().count(), a.map.len());
     }
+
+    #[test]
+    fn maplibre_injects_its_sibling_shared_library_mapped_to_its_own_file() {
+        // A pragma-free maplibre shader next to the `_prelude.*.glsl` library gets
+        // that library spliced in (so `projectTile` resolves), each injected line
+        // mapped back to the library file — not the shader — and the map stays 1:1.
+        let dir = std::env::temp_dir().join(format!(
+            "glslint-asm-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let lib = "vec4 projectTile(vec2 p) { return vec4(p, 0.0, 1.0); }\n";
+        std::fs::write(dir.join("_prelude.vertex.glsl"), lib).unwrap();
+        let shader = dir.join("background.vertex.glsl");
+        let src = "void main() { gl_Position = projectTile(vec2(0.0)); }\n";
+
+        let a = assemble(&shader, src, &no_config());
+        assert!(
+            a.source.contains("vec4 projectTile(vec2 p)"),
+            "shared library was injected: {}",
+            a.source
+        );
+        assert_eq!(a.source.lines().count(), a.map.len());
+        let idx = a
+            .source
+            .lines()
+            .position(|l| l.contains("projectTile(vec2 p)"))
+            .unwrap();
+        assert!(
+            a.map[idx]
+                .as_ref()
+                .unwrap()
+                .path
+                .ends_with("_prelude.vertex.glsl")
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 }
