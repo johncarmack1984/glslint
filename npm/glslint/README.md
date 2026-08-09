@@ -1,8 +1,8 @@
 # @glslint/cli
 
-A luma.gl / deck.gl-aware GLSL checker and language server, distributed as a prebuilt binary. No Rust toolchain needed.
+A GLSL checker and language server for the shaders WebGL toolkits actually ship, distributed as a prebuilt binary. No Rust toolchain needed.
 
-Stock GLSL tools choke on deck.gl shaders because they aren't standalone translation units: they reference UBO instances (`wind.*`) declared in separate module fragments and deck builtins (`project_position_to_clipspace`) injected at link time. glslint assembles the modules and deck stubs into a complete unit, validates it with the Khronos glslangValidator reference compiler, and maps every diagnostic back to the original file and line.
+Stock GLSL tools choke on these files because they aren't standalone translation units: WebGL has no `#include`, so libraries like luma.gl/deck.gl, maplibre-gl-js, and ShaderToy each assemble shaders in JS at build time — a raw `.glsl` references UBO instances (`wind.*`), deck builtins (`project_position_to_clipspace`), maplibre's `#pragma maplibre:` properties and shared `projectTile`/`_prelude` library, or ShaderToy's implicit `iTime`, none of which are in the file. glslint reconstructs the complete unit — discovering the project's shared library and expanding its dialect — validates it with the Khronos glslangValidator reference compiler, and maps every diagnostic back to the original file and line. The core works on an unfamiliar project with zero config; ecosystem specifics live in data (bundled presets and a project's own `glslint.toml`).
 
 ## Requires glslangValidator
 

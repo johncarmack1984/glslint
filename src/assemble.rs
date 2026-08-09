@@ -223,13 +223,42 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
         b.push_synthetic(p);
     }
 
-    // A dialect's shared shader library: sibling files the ecosystem's build
-    // concatenates ahead of every shader (maplibre's `_prelude`/`_projection_*`).
-    // Injected verbatim and mapped to their own path, so `projectTile` &c. resolve
-    // and a diagnostic inside one lands on that file, not the shader under check.
-    if let Some(d) = &dialect {
-        for name in d.prelude_files(stage) {
-            let path = dir.join(name);
+    // Default the `#define`s the project injects from JS at build time (maplibre's
+    // `NUM_ILLUMINATION_SOURCES`), `#ifndef`-guarded so the real build's value still
+    // wins. A preset lists them (`define_names`, fast); a preset may also opt in to
+    // discovering them by scanning the project — only names it actually injects, so
+    // a macro typo is still flagged.
+    if let Some(d) = dialect.as_ref().filter(|d| !d.deck) {
+        let mut defines = d.define_names.clone();
+        if d.discover_defines {
+            defines.extend(crate::discover::injected_defines(dir));
+        }
+        for name in defines {
+            b.push_synthetic(&format!("#ifndef {name}\n#define {name} 1\n#endif"));
+        }
+    }
+
+    // The shared shader library: the files a project's build concatenates ahead of
+    // every shader (maplibre's `_prelude`/`_projection_*`, luma's UBO fragments), so
+    // `projectTile` &c. resolve. A preset can name them (fast); otherwise they are
+    // DISCOVERED by structure — any no-`main` `.glsl` sibling is a library — so this
+    // works on an unfamiliar project with no filename baked into the linter.
+    // Injected verbatim, mapped to their own path (a diagnostic inside one lands
+    // there). Skipped when the project wired modules explicitly (`config.modules`,
+    // e.g. luma `[[shader]]` bindings), which inject below, and for a deck dialect.
+    if dialect.as_ref().is_none_or(|d| !d.deck) && config.modules.is_empty() {
+        let explicit: Vec<PathBuf> = dialect
+            .as_ref()
+            .map(|d| d.prelude_files(stage))
+            .filter(|f| !f.is_empty())
+            .map(|f| f.iter().map(|n| dir.join(n)).collect())
+            .unwrap_or_default();
+        let libraries = if explicit.is_empty() {
+            crate::discover::shared_libraries(dir, stage, target)
+        } else {
+            explicit
+        };
+        for path in libraries {
             if same_file(&path, target) {
                 continue;
             }

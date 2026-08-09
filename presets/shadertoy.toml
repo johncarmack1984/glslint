@@ -1,0 +1,35 @@
+# ShaderToy preset. A fragment-only environment with a fixed set of implicit
+# uniforms and a `mainImage` entry point instead of `main`. Same schema as
+# `glslint.toml` (schema/glslint.schema.json).
+#
+# Top-level keys (name, prelude_*, epilogue) must precede any [table] header —
+# TOML assigns bare keys to the most recent table otherwise.
+
+name = "shadertoy"
+
+# Implicit uniforms ShaderToy provides to every shader.
+prelude_fragment = """
+// glslint ShaderToy prelude: implicit uniforms
+uniform vec3 iResolution;
+uniform float iTime;
+uniform float iTimeDelta;
+uniform float iFrameRate;
+uniform int iFrame;
+uniform vec4 iMouse;
+uniform vec4 iDate;
+uniform float iSampleRate;
+uniform vec3 iChannelResolution[4];
+uniform float iChannelTime[4];
+uniform sampler2D iChannel0;
+uniform sampler2D iChannel1;
+uniform sampler2D iChannel2;
+uniform sampler2D iChannel3;
+out vec4 glslint_fragColor;"""
+
+# ShaderToy shaders define `mainImage`, not `main`; supply the driver `main` when
+# the source has none of its own.
+epilogue = "void main() { mainImage(glslint_fragColor, gl_FragCoord.xy); }"
+
+[detect]
+# ShaderToy's entry point is distinctive; a maplibre/deck shader never has it.
+source_contains = ["mainImage("]

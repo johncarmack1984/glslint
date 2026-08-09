@@ -1,0 +1,74 @@
+# maplibre-gl-js / mapbox-gl-js preset.
+#
+# This file carries ALL maplibre-specific knowledge — the linter core has none.
+# It uses the exact same schema a project can drop at its own root as
+# `glslint.toml`, so a project defines a preset the same way glslint ships one.
+# (Schema: schema/glslint.schema.json.)
+#
+# Everything here is an optimization / a thing the core can't infer on its own:
+# the `#pragma` transform is a maplibre invention with no standard, and the
+# explicit `library`/`defines` let glslint skip the (correct but slower)
+# project-wide discovery it would otherwise fall back to.
+
+name = "maplibre"
+
+# Macros maplibre injects from JS at draw time (value is a runtime array length,
+# e.g. `draw_hillshade.ts`). glslint can't know the value and doesn't need it —
+# it defaults them, `#ifndef`-guarded, so the real build still wins. Listing them
+# here avoids the repo scan the core would otherwise use to find them.
+# (Top-level keys must precede any [table] header in TOML.)
+defines = ["NUM_ILLUMINATION_SOURCES"]
+
+# When this preset applies. Any hit activates it: a signature in the shader
+# source, or one of maplibre's shared-library files sitting next to the shader
+# (so pragma-free shaders like background/clipping_mask are covered too).
+[detect]
+source_contains = ["#pragma maplibre:", "#pragma mapbox:"]
+sibling_files = ["_prelude.vertex.glsl", "_prelude.fragment.glsl"]
+
+# The shared library maplibre's build concatenates ahead of every shader
+# (`program.ts`: prelude + projection + shader). Listed explicitly so glslint
+# splices exactly these instead of discovering no-`main` siblings — faster, and
+# it pins mercator as the canonical projection (its signatures match globe's).
+[library]
+vertex = ["_prelude.vertex.glsl", "_projection_mercator.vertex.glsl"]
+fragment = ["_prelude.fragment.glsl", "_projection_mercator.fragment.glsl"]
+
+# The `#pragma maplibre: define|initialize <prec> <type> <name>` DSL. Expansion
+# mirrors maplibre's own `shaders.ts`: `define` declares the property (attribute +
+# varying in the data-driven branch, uniform otherwise), `initialize` binds it.
+# glslint never defines `HAS_UNIFORM_u_*`, so glslang takes the data-driven branch.
+[[expand]]
+pragma = ["maplibre", "mapbox"]
+verb = "define"
+args = ["prec", "type", "name"]
+vertex = """
+#ifndef HAS_UNIFORM_u_{name}
+uniform lowp float u_{name}_t;
+in {prec} {type} a_{name};
+out {prec} {type} {name};
+#else
+uniform {prec} {type} u_{name};
+#endif"""
+fragment = """
+#ifndef HAS_UNIFORM_u_{name}
+uniform lowp float u_{name}_t;
+in {prec} {type} {name};
+#else
+uniform {prec} {type} u_{name};
+#endif"""
+
+[[expand]]
+pragma = ["maplibre", "mapbox"]
+verb = "initialize"
+args = ["prec", "type", "name"]
+vertex = """
+#ifndef HAS_UNIFORM_u_{name}
+{name} = a_{name};
+#else
+{prec} {type} {name} = u_{name};
+#endif"""
+fragment = """
+#ifdef HAS_UNIFORM_u_{name}
+{prec} {type} {name} = u_{name};
+#endif"""
