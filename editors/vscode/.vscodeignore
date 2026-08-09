@@ -1,6 +1,7 @@
 .vscode/**
 .gitignore
 .vscodeignore
+icon.svg
 package-lock.json
 **/.DS_Store
 **/*.map

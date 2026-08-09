@@ -5,6 +5,11 @@
   "version": "0.4.1",
   "publisher": "johncarmack1984",
   "license": "MIT OR Apache-2.0",
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#0b0e14",
+    "theme": "dark"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/johncarmack1984/glslint.git",

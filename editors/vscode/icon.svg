@@ -1,0 +1,33 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#151a24"/>
+      <stop offset="1" stop-color="#0b0e14"/>
+    </linearGradient>
+    <linearGradient id="tri" x1="70" y1="60" x2="190" y2="185" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22d3ee"/>
+      <stop offset="0.5" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#e935c1"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="70" y1="60" x2="190" y2="185" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67e8f9"/>
+      <stop offset="1" stop-color="#f9a8f0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- tile -->
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bg)"/>
+  <rect x="8.5" y="8.5" width="239" height="239" rx="51.5" fill="none" stroke="#2b3346" stroke-width="1"/>
+
+  <!-- GPU triangle primitive -->
+  <path d="M128 62 L196 176 L60 176 Z" fill="url(#tri)"/>
+  <path d="M128 62 L196 176 L60 176 Z" fill="none" stroke="url(#edge)" stroke-width="4" stroke-linejoin="round" opacity="0.9"/>
+  <!-- vertex dots -->
+  <circle cx="128" cy="62" r="7" fill="#eafbff"/>
+  <circle cx="196" cy="176" r="7" fill="#fbe7fb"/>
+  <circle cx="60" cy="176" r="7" fill="#e7f0ff"/>
+
+  <!-- lint diagnostic squiggle -->
+  <path d="M62 202 q10 -12 20 0 q10 12 20 0 q10 -12 20 0 q10 12 20 0 q10 -12 20 0 q10 12 20 0 q10 -12 20 0"
+        fill="none" stroke="#fbbf24" stroke-width="6" stroke-linecap="round"/>
+</svg>
