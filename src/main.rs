@@ -15,6 +15,7 @@ mod config;
 mod deck;
 mod derive;
 mod diagnostics;
+mod dialect;
 mod drift;
 mod embed;
 mod lints;

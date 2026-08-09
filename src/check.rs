@@ -90,6 +90,7 @@ fn config_for_embedded(host: &Path, source: &str, emb: &Embedded) -> Config {
             preludes: Vec::new(),
             modules: d.modules,
             use_builtin_prelude: d.use_builtin_prelude,
+            dialect: crate::dialect::Preference::default(),
         };
     }
     Config::resolve_for(host)
@@ -748,6 +749,67 @@ mod tests {
         assert!(
             diags.iter().all(|d| d.severity != Severity::Error),
             "unexpected errors on valid shaders: {diags:#?}"
+        );
+    }
+
+    /// The reduced maplibre-gl-js `line.vertex.glsl`: the `#pragma maplibre:
+    /// define/initialize` DSL that stock glslang can't resolve.
+    const MAPLIBRE_LINE_VERTEX: &str = "\
+layout(location = 0) in ivec2 a_pos_normal;
+uniform lowp float u_device_pixel_ratio;
+out highp float v_linesofar;
+
+#pragma maplibre: define highp vec4 color
+#pragma maplibre: define lowp float opacity
+#pragma maplibre: define mediump float width
+
+void main() {
+    #pragma maplibre: initialize highp vec4 color
+    #pragma maplibre: initialize lowp float opacity
+    #pragma maplibre: initialize mediump float width
+
+    if (opacity < 0.01) {
+        gl_Position = vec4(-2.0, -2.0, -2.0, 1.0);
+        return;
+    }
+    gl_Position = vec4(color.rgb, 1.0) * 0.0 + vec4(width, v_linesofar, 0.0, 1.0);
+}
+";
+
+    #[test]
+    fn maplibre_pragmas_resolve_via_autodetect() {
+        // With no config at all, the `#pragma maplibre:` signature is auto-detected
+        // and the define/initialize directives expand into real declarations, so
+        // the shader that lit up in the editor draws no error.
+        if !glslang_on_path() {
+            return;
+        }
+        let diags = check_source(Path::new("line.vertex.glsl"), MAPLIBRE_LINE_VERTEX);
+        assert!(
+            diags.iter().all(|d| d.severity != Severity::Error),
+            "maplibre pragmas should resolve, got: {diags:#?}"
+        );
+    }
+
+    #[test]
+    fn maplibre_dialect_still_catches_real_type_errors() {
+        // The dialect must not become a blanket suppressor: a genuine misuse of a
+        // pragma-defined symbol (assigning a vec4 `color` to a float) still errors.
+        if !glslang_on_path() {
+            return;
+        }
+        let src = "\
+#pragma maplibre: define highp vec4 color
+void main() {
+    #pragma maplibre: initialize highp vec4 color
+    float x = color;
+    gl_Position = vec4(x);
+}
+";
+        let diags = check_source(Path::new("bad.vertex.glsl"), src);
+        assert!(
+            diags.iter().any(|d| d.severity == Severity::Error),
+            "a real type error must survive the dialect: {diags:#?}"
         );
     }
 }
