@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/johncarmack1984/glslint/compare/v0.6.0...v0.7.0) (2026-08-09)
+
+
+### Features
+
+* **dialect:** inject maplibre's shared shader library and detect it on disk ([#44](https://github.com/johncarmack1984/glslint/issues/44)) ([3cdcb3a](https://github.com/johncarmack1984/glslint/commit/3cdcb3a6de509c67bbfbe74cef15d87d2aaf9389))
+
 ## [0.6.0](https://github.com/johncarmack1984/glslint/compare/v0.5.0...v0.6.0) (2026-08-09)
 
 
