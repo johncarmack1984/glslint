@@ -12,3 +12,6 @@ node_modules/
 # Release binaries pulled down with `gh release download` before running
 # npm/prepare.mjs.
 /dist
+
+CLAUDE.md
+.claude/**/*
