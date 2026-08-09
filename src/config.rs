@@ -43,6 +43,48 @@ struct ConfigFile {
     /// Per-shader module bindings (`[[shader]]`).
     #[serde(default, rename = "shader")]
     shaders: Vec<ShaderBinding>,
+    /// Shader-dialect selection and custom directive rules (`[dialect]`).
+    #[serde(default)]
+    dialect: DialectFile,
+}
+
+/// The `[dialect]` table: pick a built-in preset, toggle auto-detection, and/or
+/// extend it with project-local rules and prelude.
+#[derive(Debug, Clone, Deserialize, Default)]
+struct DialectFile {
+    /// A built-in preset name (`"maplibre"`, `"shadertoy"`, `"none"`). When set,
+    /// it replaces auto-detection as the base dialect.
+    preset: Option<String>,
+    /// Whether to sniff the source for a dialect when no `preset` is given.
+    /// Defaults to on, so a maplibre checkout works with zero config.
+    auto: Option<bool>,
+    /// Extra prelude prepended for every stage (implicit globals).
+    prelude: Option<String>,
+    /// Project-local expansion rules (`[[dialect.expand]]`), merged ahead of the
+    /// base dialect's own so a project can override a preset rule.
+    #[serde(default, rename = "expand")]
+    expand: Vec<ExpandRuleFile>,
+}
+
+/// One `[[dialect.expand]]` rule in `glsl-lsp.toml`.
+#[derive(Debug, Clone, Deserialize)]
+struct ExpandRuleFile {
+    /// Pragma namespace: matches `#pragma <pragma>: …`.
+    pragma: String,
+    /// First token after the namespace to match, or omit to match any.
+    verb: Option<String>,
+    /// Names bound, in order, to the remaining whitespace tokens.
+    #[serde(default)]
+    args: Vec<String>,
+    /// Expansion template; `{arg}` placeholders are substituted. Applies to every
+    /// stage unless a stage-specific field overrides it.
+    emit: Option<String>,
+    /// Vertex-stage override for `emit`.
+    vertex: Option<String>,
+    /// Fragment-stage override for `emit`.
+    fragment: Option<String>,
+    /// Compute-stage override for `emit`.
+    compute: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -77,6 +119,34 @@ pub struct Config {
     pub preludes: Vec<PathBuf>,
     pub modules: Vec<PathBuf>,
     pub use_builtin_prelude: bool,
+    /// Which shader dialect (maplibre, shadertoy, …) and custom directive rules
+    /// apply. Resolved to a concrete dialect at assembly time, once the source is
+    /// known (auto-detection needs it).
+    pub dialect: crate::dialect::Preference,
+}
+
+/// Build a dialect [`Preference`](crate::dialect::Preference) from the `[dialect]`
+/// table, translating each `[[dialect.expand]]` entry into a rule.
+fn dialect_pref(df: &DialectFile) -> crate::dialect::Preference {
+    let custom_rules = df
+        .expand
+        .iter()
+        .map(|e| crate::dialect::Rule {
+            ns: e.pragma.clone(),
+            verb: e.verb.clone(),
+            args: e.args.clone(),
+            vertex: e.vertex.clone(),
+            fragment: e.fragment.clone(),
+            compute: e.compute.clone(),
+            any: e.emit.clone(),
+        })
+        .collect();
+    crate::dialect::Preference {
+        preset: df.preset.clone(),
+        auto: df.auto.unwrap_or(true),
+        custom_rules,
+        custom_prelude: df.prelude.clone(),
+    }
 }
 
 impl Config {
@@ -98,6 +168,7 @@ impl Config {
                 preludes: join_all(base, &cf.preludes),
                 modules: join_all(base, &cf.modules),
                 use_builtin_prelude: cf.builtin_prelude.unwrap_or(true),
+                dialect: dialect_pref(&cf.dialect),
             };
         }
 
@@ -108,15 +179,18 @@ impl Config {
                 preludes: Vec::new(),
                 modules: d.modules,
                 use_builtin_prelude: d.use_builtin_prelude,
+                dialect: crate::dialect::Preference::default(),
             };
         }
 
         // Zero-config: builtin deck/luma prelude + auto-discovered sibling UBO
-        // fragments (`*Uniforms.glsl`) next to the target.
+        // fragments (`*Uniforms.glsl`) next to the target. Dialect auto-detection
+        // stays on, so a maplibre checkout with no config still validates.
         Config {
             preludes: Vec::new(),
             modules: discover_sibling_modules(dir),
             use_builtin_prelude: true,
+            dialect: crate::dialect::Preference::default(),
         }
     }
 }
@@ -139,6 +213,7 @@ fn resolve_bindings(file: &Path, cf: &ConfigFile, base: &Path) -> Config {
             preludes: join_all(base, &cf.preludes),
             modules: Vec::new(),
             use_builtin_prelude: cf.builtin_prelude.unwrap_or(true),
+            dialect: dialect_pref(&cf.dialect),
         };
     };
 
@@ -158,6 +233,7 @@ fn resolve_bindings(file: &Path, cf: &ConfigFile, base: &Path) -> Config {
         preludes: join_all(base, &cf.preludes),
         modules,
         use_builtin_prelude: binding.builtin_prelude.unwrap_or(wants_builtin),
+        dialect: dialect_pref(&cf.dialect),
     }
 }
 

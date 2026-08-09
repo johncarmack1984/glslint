@@ -186,6 +186,10 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
     let mut b = Builder::new();
     let lines: Vec<&str> = source.lines().collect();
 
+    // Resolve the shader dialect (maplibre pragmas, shadertoy uniforms, project
+    // rules) for this source. `None` => no dialect handling, the deck/luma path.
+    let dialect = crate::dialect::resolve(&config.dialect, source);
+
     // A `#version` directive must precede all code, so hoist the target's own to
     // the top (it's dropped from the body below) and map it back to its real line
     // so a version error still points home. Default it when absent. Default
@@ -205,7 +209,21 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
     }
     b.push_synthetic(DEFAULT_PRECISION);
 
-    if config.use_builtin_prelude {
+    // A dialect's prelude declares its implicit globals (shadertoy's `iTime` &c.).
+    if let Some(d) = &dialect
+        && let Some(p) = d.prelude(stage)
+    {
+        b.push_synthetic(p);
+    }
+    if let Some(d) = &dialect
+        && let Some(p) = &d.prelude_extra
+    {
+        b.push_synthetic(p);
+    }
+
+    // The deck builtin prelude applies unless a non-deck dialect took over.
+    let deck_applies = dialect.as_ref().is_none_or(|d| d.deck);
+    if config.use_builtin_prelude && deck_applies {
         // Prefer deck's real project functions from node_modules (extracted as
         // empty-body stubs); fall back to the baked-in 4-function stub.
         let fns = crate::deck::project_fns(target.parent().unwrap_or(Path::new(".")));
@@ -230,18 +248,35 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
         }
     }
 
-    // The rest of the original, every line except the hoisted `#version`.
+    // The rest of the original, every line except the hoisted `#version`. A dialect
+    // may expand a directive line into several declarations; each keeps the loc of
+    // the pragma it came from, so a diagnostic inside the expansion points at the
+    // author's `#pragma`.
     for (i, l) in lines.iter().enumerate() {
         if Some(i) == vidx {
             continue;
         }
-        b.push(
-            l.to_string(),
-            Some(Loc {
-                path: target.to_path_buf(),
-                line: line_no(i),
-            }),
-        );
+        let loc = Loc {
+            path: target.to_path_buf(),
+            line: line_no(i),
+        };
+        match dialect.as_ref().and_then(|d| d.expand_line(l, stage)) {
+            Some(expanded) => {
+                for e in expanded {
+                    b.push(e, Some(loc.clone()));
+                }
+            }
+            None => b.push(l.to_string(), Some(loc)),
+        }
+    }
+
+    // A dialect epilogue (shadertoy's `main` driving `mainImage`) is appended only
+    // when the source has no entry point of its own.
+    if let Some(d) = &dialect
+        && let Some(ep) = &d.epilogue
+        && !crate::dialect::has_main(source)
+    {
+        b.push_synthetic(ep);
     }
 
     b.finish(stage, target, None)
@@ -293,6 +328,7 @@ mod tests {
             preludes: vec![],
             modules: vec![],
             use_builtin_prelude: false,
+            dialect: crate::dialect::Preference::default(),
         }
     }
 
@@ -357,6 +393,41 @@ mod tests {
         let src = "#version 300 es\nout vec4 c;\nvoid main(){}\n";
         let a = assemble(Path::new("draw.frag.glsl"), src, &no_config());
         assert!(a.source.contains("precision highp float;"));
+    }
+
+    #[test]
+    fn maplibre_pragma_is_expanded_and_stays_one_to_one_mapped() {
+        // Auto-detected maplibre define/initialize expand into real declarations,
+        // and every expanded line still has exactly one map entry so the diagnostic
+        // translation can't drift.
+        let src = "#pragma maplibre: define lowp float opacity\n\
+                   void main() {\n\
+                   #pragma maplibre: initialize lowp float opacity\n\
+                   gl_Position = vec4(opacity);\n\
+                   }\n";
+        let a = assemble(Path::new("line.vertex.glsl"), src, &no_config());
+        assert_eq!(a.stage, Stage::Vertex);
+        assert_eq!(a.source.lines().count(), a.map.len());
+        // The define produced the attribute/varying; the pragma line itself is gone.
+        assert!(a.source.contains("in lowp float a_opacity;"));
+        assert!(a.source.contains("out lowp float opacity;"));
+        assert!(!a.source.contains("#pragma maplibre"));
+        // An expanded declaration maps back to the pragma's original line (line 1).
+        let idx = a
+            .source
+            .lines()
+            .position(|l| l.contains("out lowp float opacity;"))
+            .unwrap();
+        assert_eq!(a.map[idx].as_ref().unwrap().line, 1);
+    }
+
+    #[test]
+    fn no_dialect_leaves_a_plain_shader_untouched() {
+        // A deck/luma shader without dialect signatures gets no expansion.
+        let src = "out vec4 c;\nvoid main(){ c = vec4(1.0); }\n";
+        let a = assemble(Path::new("draw.frag.glsl"), src, &no_config());
+        assert!(a.source.contains("out vec4 c;"));
+        assert_eq!(a.source.lines().count(), a.map.len());
     }
 
     #[test]
