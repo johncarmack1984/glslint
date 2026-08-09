@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/johncarmack1984/glslint/compare/v0.5.0...v0.6.0) (2026-08-09)
+
+
+### Features
+
+* **dialect:** resolve ecosystem shader pragmas via a dialect layer ([#42](https://github.com/johncarmack1984/glslint/issues/42)) ([299e2dc](https://github.com/johncarmack1984/glslint/commit/299e2dc3362fffe5e79d76efd372716a131caf99))
+* **homebrew:** distribute glslint through a Homebrew tap ([#40](https://github.com/johncarmack1984/glslint/issues/40)) ([7565178](https://github.com/johncarmack1984/glslint/commit/756517872972d7bfce1619f82ffb2a56eac2a831))
+
 ## [0.5.0](https://github.com/johncarmack1984/glslint/compare/v0.4.1...v0.5.0) (2026-08-09)
 
 
