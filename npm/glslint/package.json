@@ -1,6 +1,6 @@
 {
   "name": "@glslint/cli",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "A luma.gl/deck.gl-aware GLSL checker and language server",
   "keywords": [
     "glsl",
@@ -36,9 +36,9 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "@glslint/darwin-arm64": "0.4.0",
-    "@glslint/darwin-x64": "0.4.0",
-    "@glslint/linux-x64": "0.4.0",
-    "@glslint/win32-x64": "0.4.0"
+    "@glslint/darwin-arm64": "0.4.1",
+    "@glslint/darwin-x64": "0.4.1",
+    "@glslint/linux-x64": "0.4.1",
+    "@glslint/win32-x64": "0.4.1"
   }
 }
