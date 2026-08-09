@@ -1,7 +1,7 @@
 {
   "name": "glslint",
   "displayName": "glslint",
-  "description": "luma.gl/deck.gl-aware GLSL diagnostics — an LSP client for the glslint binary.",
+  "description": "GLSL diagnostics for WebGL toolkits (luma.gl/deck.gl, maplibre, ShaderToy) — an LSP client for the glslint binary.",
   "version": "0.7.0",
   "publisher": "johncarmack1984",
   "license": "MIT OR Apache-2.0",
@@ -24,6 +24,8 @@
     "shader",
     "deck.gl",
     "luma.gl",
+    "maplibre",
+    "shadertoy",
     "webgl",
     "lsp"
   ],

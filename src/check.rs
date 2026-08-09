@@ -777,10 +777,11 @@ void main() {
 ";
 
     #[test]
-    fn maplibre_pragmas_resolve_via_autodetect() {
-        // With no config at all, the `#pragma maplibre:` signature is auto-detected
-        // and the define/initialize directives expand into real declarations, so
-        // the shader that lit up in the editor draws no error.
+    fn maplibre_pragmas_resolve_via_bundled_preset() {
+        // With no config at all, the `#pragma maplibre:` signature is detected by
+        // the bundled maplibre preset and the define/initialize directives expand
+        // into real declarations, so the shader that lit up in the editor draws no
+        // error.
         if !glslang_on_path() {
             return;
         }

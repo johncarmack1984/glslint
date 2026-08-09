@@ -1,0 +1,112 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/johncarmack1984/glslint/main/schema/glslint.schema.json",
+  "title": "glslint preset",
+  "description": "A glslint shader-dialect preset. The identical schema is used by glslint's bundled presets (presets/*.toml) and by a project's own glslint.toml at its root. A preset teaches glslint how to recognize a shader ecosystem, how to expand its #pragma DSL, and — for speed — its shared-library files and build-injected macros.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Preset identifier, e.g. \"maplibre\". Referenced by an explicit preset selection and shown in diagnostics."
+    },
+    "defines": {
+      "type": "array",
+      "description": "Names of macros the project injects from JS/native at build time (e.g. maplibre's NUM_ILLUMINATION_SOURCES, whose value is a runtime array length). glslint supplies an #ifndef-guarded default so they resolve; the real build's value still wins when present.",
+      "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+    },
+    "discover_defines": {
+      "type": "boolean",
+      "description": "Also discover injected `#define NAME ${...}` macros by scanning the project's JS/TS, in addition to `defines`. Off by default: the scan walks the repository, so a preset that can enumerate its macros should list them in `defines` instead.",
+      "default": false
+    },
+    "deck": {
+      "type": "boolean",
+      "description": "Whether the built-in deck.gl project prelude still applies under this preset. Almost always false.",
+      "default": false
+    },
+    "prelude": {
+      "type": "string",
+      "description": "GLSL prepended to every shader (implicit globals) regardless of stage."
+    },
+    "prelude_vertex": {
+      "type": "string",
+      "description": "GLSL prepended to vertex-stage shaders (overrides `prelude` for that stage)."
+    },
+    "prelude_fragment": {
+      "type": "string",
+      "description": "GLSL prepended to fragment-stage shaders (e.g. ShaderToy's implicit uniforms)."
+    },
+    "epilogue": {
+      "type": "string",
+      "description": "GLSL appended after the shader body, but only when the source declares no `main` of its own (e.g. a `main` that drives ShaderToy's `mainImage`)."
+    },
+    "detect": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "When this preset applies to a shader. Any single hit activates it. If both fields are empty the preset is only used when selected explicitly.",
+      "properties": {
+        "source_contains": {
+          "type": "array",
+          "description": "Substrings that, if present in the shader source, activate the preset (e.g. \"#pragma maplibre:\").",
+          "items": { "type": "string" }
+        },
+        "sibling_files": {
+          "type": "array",
+          "description": "Filenames that, if present next to the shader, activate the preset — so a pragma-free shader in a known project is still recognized (e.g. \"_prelude.vertex.glsl\").",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "library": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The shared-library files the project's build concatenates ahead of every shader (maplibre's _prelude / _projection_*). Listed here, glslint splices exactly these instead of discovering no-`main` siblings — faster and unambiguous. Paths are relative to the shader's directory; earlier files are injected first.",
+      "properties": {
+        "vertex": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "fragment": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "expand": {
+      "type": "array",
+      "description": "Directive-expansion rules: the ecosystem's #pragma DSL, which no standard covers and glslint cannot infer. Each rule rewrites a `#pragma <ns>: <verb> <args...>` line, in place, into GLSL.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pragma"],
+        "properties": {
+          "pragma": {
+            "description": "The pragma namespace(s) this rule matches — `#pragma <namespace>: ...`. A string, or a list to share one rule across namespaces (maplibre uses both \"maplibre\" and \"mapbox\").",
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ]
+          },
+          "verb": {
+            "type": "string",
+            "description": "The first token after the namespace to match (e.g. \"define\"). Omit to match the namespace alone."
+          },
+          "args": {
+            "type": "array",
+            "description": "Names bound, in order, to the whitespace tokens after the verb. Substituted into the templates as {name} (so `u_{name}` becomes `u_opacity`).",
+            "items": { "type": "string" }
+          },
+          "emit": {
+            "type": "string",
+            "description": "Expansion template used for any stage without a stage-specific override."
+          },
+          "vertex": { "type": "string", "description": "Vertex-stage expansion template (overrides `emit`)." },
+          "fragment": { "type": "string", "description": "Fragment-stage expansion template (overrides `emit`)." },
+          "compute": { "type": "string", "description": "Compute-stage expansion template (overrides `emit`)." }
+        }
+      }
+    }
+  }
+}

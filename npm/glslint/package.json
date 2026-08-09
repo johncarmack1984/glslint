@@ -1,12 +1,14 @@
 {
   "name": "@glslint/cli",
   "version": "0.7.0",
-  "description": "A luma.gl/deck.gl-aware GLSL checker and language server",
+  "description": "A GLSL checker and language server for WebGL shader toolkits (luma.gl/deck.gl, maplibre, ShaderToy) and any project",
   "keywords": [
     "glsl",
     "shader",
     "deck.gl",
     "luma.gl",
+    "maplibre",
+    "shadertoy",
     "webgl",
     "lsp",
     "linter"

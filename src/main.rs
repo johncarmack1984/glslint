@@ -16,10 +16,12 @@ mod deck;
 mod derive;
 mod diagnostics;
 mod dialect;
+mod discover;
 mod drift;
 mod embed;
 mod lints;
 mod lsp;
+mod preset;
 mod symbols;
 
 use diagnostics::{Severity, print_diag};

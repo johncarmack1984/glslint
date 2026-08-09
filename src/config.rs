@@ -183,12 +183,13 @@ impl Config {
             };
         }
 
-        // Zero-config: builtin deck/luma prelude + auto-discovered sibling UBO
-        // fragments (`*Uniforms.glsl`) next to the target. Dialect auto-detection
+        // Zero-config: the builtin deck/luma prelude, and no explicit modules —
+        // `assemble` discovers the shared library (any no-`main` `.glsl` sibling,
+        // which subsumes the old `*Uniforms.glsl` heuristic) and preset detection
         // stays on, so a maplibre checkout with no config still validates.
         Config {
             preludes: Vec::new(),
-            modules: discover_sibling_modules(dir),
+            modules: Vec::new(),
             use_builtin_prelude: true,
             dialect: crate::dialect::Preference::default(),
         }
@@ -292,23 +293,6 @@ fn glob_match(pattern: &str, text: &str) -> bool {
         pi += 1;
     }
     pi == p.len()
-}
-
-fn discover_sibling_modules(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for e in entries.flatten() {
-            let p = e.path();
-            if p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.ends_with("Uniforms.glsl"))
-            {
-                out.push(p);
-            }
-        }
-    }
-    out.sort();
-    out
 }
 
 fn find_up(start: &Path, name: &str) -> Option<PathBuf> {

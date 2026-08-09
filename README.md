@@ -1,6 +1,8 @@
 # glslint
 
-A luma.gl / deck.gl-aware GLSL checker and language server. Stock GLSL tools choke on these shaders because they aren't standalone translation units: they reference UBO instances (`wind.*`, `blit.*`) declared in separate module fragments and deck builtins (`project_position_to_clipspace`) injected at link time. glslint assembles the modules + deck stubs into a complete unit, validates it with the Khronos glslangValidator reference compiler, and maps diagnostics back to the original file and line.
+A GLSL checker and language server for the shaders web toolkits actually ship. Stock GLSL tools choke on these files because they aren't standalone translation units: WebGL has no `#include`, so libraries like luma.gl/deck.gl, maplibre-gl-js, and ShaderToy each assemble shaders in JS at build time — a raw `.glsl` references UBO instances (`wind.*`), deck builtins (`project_position_to_clipspace`), maplibre's `#pragma maplibre:` properties and shared `projectTile`/`_prelude` library, or ShaderToy's implicit `iTime`, none of which are in the file. glslint reconstructs the complete unit — discovering the project's shared library and expanding its dialect — validates it with the Khronos glslangValidator reference compiler, and maps diagnostics back to the original file and line.
+
+The core is ecosystem-agnostic and works on an unfamiliar project with **zero config**; ecosystem specifics (maplibre's pragmas, ShaderToy's uniforms) live entirely in data — bundled [presets](presets/) and a project's own `glslint.toml`, which share one schema. See [Shader dialects & presets](#shader-dialects--presets).
 
 ## Requirements
 
@@ -37,7 +39,7 @@ cargo build
 ./target/debug/glslint lsp                               # language server over stdio
 ```
 
-`check` resolves config by walking up for a `glsl-lsp.toml`; with none, it uses a built-in deck `project32` prelude and auto-discovers sibling `*Uniforms.glsl` module fragments next to the target. A `.ts`/`.tsx`/`.js`/`.jsx` argument is scanned for GLSL embedded in tagged template literals instead of being treated as one shader (see below).
+`check` needs no config: it detects the shader's ecosystem from a bundled [preset](#shader-dialects--presets) (or a project's `glslint.toml`), discovers the project's shared library (any sibling `.glsl` with no `main`), and falls back to the built-in deck `project32` prelude. `glsl-lsp.toml` (walked up for) additionally wires luma's per-shader module bindings. A `.ts`/`.tsx`/`.js`/`.jsx` argument is scanned for GLSL embedded in tagged template literals instead of being treated as one shader (see below).
 
 The faithful form mirrors luma's own model: name the modules once, then bind each shader to the modules it actually uses (the `new Model({modules: [...]})` call in JS). Each shader then gets exactly its modules, so referencing a uniform block the shader doesn't have is flagged instead of silently resolved:
 
@@ -80,33 +82,49 @@ Each template's diagnostics — the glslang errors and the source lints alike �
 
 **Interpolations.** A template containing a `${…}` interpolation isn't a complete translation unit — the injected value can declare symbols the shader uses, or use ones it declares, and glslint can't see either. Validating a shader it can't faithfully reconstruct would risk reporting errors that are really the tool's fault, so such a template is checked with the **source-level lints only** (those match the author's own tokens and don't need a complete unit) and gets one informational `note`. Templates with no interpolation are fully validated. The `${…}` is blanked to spaces — newlines preserved — purely so the lints' line/column math stays exact.
 
-## Shader dialects
+## Shader dialects & presets
 
-A `.glsl` file is incomplete in exactly three ways, and glslint handles all three. Two are covered above: **implicit globals** injected at link time (deck builtins, via the prelude) and **external module references** whose declarations live in sibling fragments (luma/deck UBOs, via `[[module]]` bindings). The third is an **in-file directive DSL** — pragmas an ecosystem's own build step expands into declarations before any compiler runs. maplibre-gl-js is the canonical case: `#pragma maplibre: define lowp float opacity` declares `opacity` and `#pragma maplibre: initialize lowp float opacity` binds it into `main`, so stock glslang — which treats an unknown `#pragma` as a no-op — reports a false `'opacity' : undeclared identifier` on every such shader.
+A `.glsl` file in these toolkits is incomplete in one of four ways, and glslint's core handles the first three **with no ecosystem knowledge at all**:
 
-A **dialect** models one ecosystem as data, not code: an optional per-stage prelude (implicit globals), an optional epilogue (a wrapper `main`), and a set of expansion rules that rewrite a directive into GLSL. Built-in presets ship for `maplibre`/`mapbox` (the define/initialize DSL) and `shadertoy` (the implicit `iTime`/`iResolution`/`iChannel*` uniforms plus a `main` that drives `mainImage`). With **no config**, the source is sniffed for a signature (`#pragma maplibre:`, a `mainImage` entry point) so an unconfigured checkout just works; select or pin one explicitly, or turn detection off, in `glsl-lsp.toml`:
+1. **Implicit globals / a shared library** — functions and uniforms the build concatenates ahead of every shader (maplibre's `projectTile`, `unpack_mix_color`, `u_projection_matrix`; luma UBO fragments). The universal signal is structural: a file with `main()` is a *shader*; a file without is a *library*. glslint discovers the no-`main` siblings and splices them in verbatim, each line mapped to its own file, so a diagnostic there lands on the library, not the shader — no filename baked into the linter. Mutually-exclusive variants (mercator vs globe both define `projectTile`) are deduped by function name.
+2. **External module references** — declarations in sibling fragments wired per-shader (luma/deck UBOs, via `[[module]]` bindings in `glsl-lsp.toml`, or auto-derived from `new Model({ modules })`).
+3. **Injected globals** — deck builtins, resolved from `node_modules` as signature stubs.
+
+The fourth is an **in-file directive DSL** — a `#pragma` an ecosystem's build expands into declarations, which has no GLSL standard and glslint cannot infer. maplibre is the canonical case: `#pragma maplibre: define lowp float opacity` declares `opacity`, so stock glslang — which no-ops the unknown pragma — reports a false `'opacity' : undeclared identifier`. That one thing needs a **preset**.
+
+### Presets
+
+A preset is ecosystem knowledge as **data**, not code. glslint ships presets for maplibre/mapbox and ShaderToy in [`presets/`](presets/), compiled in and applied automatically when their `[detect]` rules match. The linter core contains none of it. A preset declares:
+
+- **when it applies** (`[detect]`: a source substring like `#pragma maplibre:`, or a sibling file like `_prelude.vertex.glsl` — so even a pragma-free maplibre shader is recognized);
+- **the `#pragma` transform** (`[[expand]]` rules);
+- and, for speed, the explicit shared-**`library`** files and injected **`defines`** so the core can skip discovery.
+
+A project configures glslint by dropping a **`glslint.toml`** at its root — using the *identical schema*. So defining a private ecosystem and shipping a bundled preset are the same act; the bundled files are examples to copy. The schema is published at [`schema/glslint.schema.json`](schema/glslint.schema.json).
 
 ```toml
-[dialect]
-preset = "maplibre"   # "maplibre" | "shadertoy" | "none";  omit to auto-detect
-# auto = false          # disable signature sniffing when no preset is set
-```
+# glslint.toml — teach glslint a house #pragma DSL
+name = "myengine"
 
-Adding the next ecosystem is a preset or a few config lines — never a fork. A project declares its own directive rules inline; each `[[dialect.expand]]` matches `#pragma <pragma>: <verb> <args…>`, binds the whitespace tokens after the verb to `args`, and substitutes them into the emitted GLSL (`{name}` in `u_{name}` becomes `u_opacity`). A `[dialect].prelude` string composes with the preset's own:
+[detect]
+source_contains = ["#pragma myfx:"]
 
-```toml
-[[dialect.expand]]
+[[expand]]
 pragma = "myfx"
-verb   = "slot"           # omit to match the namespace alone
+verb   = "slot"                       # omit to match the namespace alone
 args   = ["type", "name"]
-emit   = "uniform {type} {name};"   # or per-stage: vertex = "…", fragment = "…"
+emit   = "uniform {type} {name};"     # `{name}` in `u_{name}` → `u_opacity`; or per-stage vertex/fragment
 ```
 
-**Shared shader library.** A dialect also resolves the *first* kind of incompleteness — implicit globals — from an ecosystem's real source rather than a hand-written stub. maplibre shaders lean on a shared library its build concatenates ahead of every shader: `projectTile`/`projectLineThickness` (projection), `unpack_mix_color`/`get_elevation` (helpers), and globals like `u_projection_matrix` and `PI`. The maplibre dialect discovers those sibling files — `_prelude.<stage>.glsl` and `_projection_mercator.<stage>.glsl` — next to the shader and splices them in verbatim, each line mapped to its own file so a diagnostic there lands on the library, not the shader. Because the files are real, self-contained GLSL (unlike deck's, whose bodies interpolate JS constants and must be reduced to signature stubs), no extraction is needed. Mercator is the canonical projection; its `projectTile` signatures match globe's, so they satisfy a globe shader too.
+Adding the next ecosystem is a preset file — never a fork. (You can still select or pin a bundled preset explicitly, or disable detection, via `[dialect]` `preset`/`auto` in `glsl-lsp.toml`.)
 
-That shared library is also the detection signal for maplibre's **pragma-free** shaders. Many shaders (`background`, `clipping_mask`, `depth`, …) use no data-driven property, so they carry no `#pragma maplibre:` line — but they still call `projectTile` and write `fragColor` from that library. So, exactly as deck is recognized by its package on disk, a shader sitting next to `_prelude.*.glsl` is detected as maplibre even with no pragma. Across maplibre-gl-js's own shader suite this resolves 66 of 67 shaders with zero config. The lone holdout is the one class no static tool can infer: a **build-time `#define` injected from JS** (hillshade's `NUM_ILLUMINATION_SOURCES`, whose value is a runtime array length). Give it a default and it validates — `prelude = "#ifndef NUM_ILLUMINATION_SOURCES\n#define NUM_ILLUMINATION_SOURCES 2\n#endif"` under `[dialect]` — and the `#ifndef` guard means the real build's value still wins when it's present.
+### Injected `#define`s
 
-The load-bearing principle: glslint doesn't replicate an ecosystem's runtime semantics — it only makes every symbol resolve with the right **type**, so glslang stops false-erroring while a real type error (assigning a `vec4` property to a `float`) still surfaces on the author's own line. maplibre's expansion mirrors what its `shaders.ts` emits; glslint never defines `HAS_UNIFORM_u_*`, so glslang's preprocessor takes the data-driven branch — the one that exercises the most symbols. (Auto-detection covers stage-named files, `*.fs`/`*.frag`, and embedded shaders with an entry point; a bare-`.glsl` ShaderToy snippet with no stage in its name is still wrapped syntax-only.)
+maplibre's build injects one macro from JS at draw time — hillshade's `NUM_ILLUMINATION_SOURCES`, whose value is a runtime array length. No static tool can know the value, and linting doesn't need it (it's an array size); glslint just needs the symbol to resolve. The maplibre preset lists it in `defines`, and glslint supplies an `#ifndef`-guarded default so it type-checks — the real build's value still wins when present. A preset can instead set `discover_defines = true` to find such macros by scanning the project's JS/TS for `#define NAME ${…}` (the interpolated value is the tell); it's off by default because the scan walks the repo, and only names the project *actually* injects are defaulted, so a macro typo is still flagged.
+
+With this, all 67 of maplibre-gl-js's own shaders validate with **zero config** — the shaders that lit up in the editor (`line.vertex.glsl`, `hillshade.fragment.glsl`) draw no error, and every projection/library function resolves from the project's real source.
+
+The load-bearing principle: glslint doesn't replicate an ecosystem's runtime semantics — it only makes every symbol resolve with the right **type**, so glslang stops false-erroring while a real type error (assigning a `vec4` property to a `float`) still surfaces on the author's own line. maplibre's expansion mirrors what its `shaders.ts` emits; glslint never defines `HAS_UNIFORM_u_*`, so glslang's preprocessor takes the data-driven branch — the one that exercises the most symbols.
 
 ## Editor integration
 
@@ -114,8 +132,10 @@ A minimal VS Code / Cursor extension lives in [`editors/vscode/`](editors/vscode
 
 ## How it works
 
-- `assemble.rs`: hoists the target's own `#version` to the top, injects default precision (so the deck prelude's `float`/`vec*` are well-formed before the shader's own `precision` line), then the dialect prelude (when one applies) and the prelude + module blocks, recording a per-line map back to the originals. Source is otherwise passed through **verbatim** — the one exception is dialect directive expansion (below), where each rewritten line keeps the loc of the pragma it came from, so a diagnostic inside the expansion still points at the author's `#pragma`. Stage is inferred from the filename (`*.vert.glsl` / `*.frag.glsl` / `*.comp.glsl`); bare module fragments are wrapped in a dummy shell for syntax-only checking.
-- `dialect.rs`: models an ecosystem's shader conventions (maplibre's define/initialize DSL, its shared `_prelude`/`_projection_*` library, ShaderToy's implicit uniforms) as data — a prelude, an epilogue, directive-expansion rules, and sibling library files to splice in — so the deck/luma assembler stays generic and a new ecosystem is a preset or a few `[[dialect.expand]]` lines, not a fork. Resolves the active dialect from an explicit `preset`, else auto-detection (a source-signature sniff *or* the shared library found next to the shader on disk), else none; layers project-local rules and prelude on top. See the [Shader dialects](#shader-dialects) section.
+- `assemble.rs`: hoists the target's own `#version` to the top, injects default precision, then the dialect prelude and injected-`#define` defaults (when a preset applies), the discovered/declared shared library, and the prelude + module blocks — recording a per-line map back to the originals. Source is otherwise passed through **verbatim**; the one exception is dialect directive expansion, where each rewritten line keeps the loc of the pragma it came from, so a diagnostic inside the expansion still points at the author's `#pragma`. Stage is inferred from the filename (`*.vert.glsl` / `*.frag.glsl` / `*.comp.glsl`); bare module fragments are wrapped in a dummy shell for syntax-only checking.
+- `discover.rs`: the ecosystem-agnostic core — reads a project's ground truth rather than encoding it. **Shared-library discovery**: any sibling `.glsl` with no `main` is a library the build concatenates in; they're spliced (variant-deduped by function name), so `projectTile` &c. resolve on an unfamiliar project with no filename baked in. **Injected-define discovery** (opt-in): scans the project's JS/TS for build-injected `#define NAME ${…}` macros (the interpolated value is the signature that separates them from a shader's own literal `#define`), memoized per repo root.
+- `preset.rs`: parses shader-ecosystem knowledge from TOML — bundled [`presets/*.toml`](presets/) compiled in, and a project's own `glslint.toml`, using one schema ([`schema/glslint.schema.json`](schema/glslint.schema.json), `deny_unknown_fields`). Detection iterates every preset's `[detect]` (project presets shadow bundled), so adding an ecosystem is a data file, not Rust. All maplibre/ShaderToy specifics live here, none in the core.
+- `dialect.rs`: the runtime model a preset parses into (per-stage preludes, an epilogue, `[[expand]]` rules, library files, injected-define names) plus the expansion engine that rewrites a `#pragma <ns>: <verb> <args…>` line into GLSL by binding tokens to `args` and substituting `{name}` placeholders. Ecosystem-free — it's driven entirely by the data `preset.rs` supplies.
 - `check.rs`: runs `glslangValidator --stdin -S <stage>` over the assembled unit, parses its `ERROR: 0:LINE:` / `WARNING:` output, collapses glslang's per-line error cascades to the root cause, and translates each line back to the original file:line via the map (refining the column from the offending token when glslang names one). **This mapping is the hard part and it works**: errors land on `draw.vert.glsl:4`, and an error inside an injected module lands on `windUniforms.glsl:3`, not the assembled unit.
 - `lints.rs`: opinionated, zero-false-positive rules (currently: GLSL ES 1.00 builtins/qualifiers removed in `#version 300 es`). Runs alongside the validator, so a `varying` declaration draws both the raw glslang error and a friendlier migration hint.
 - `drift.rs`: when a module declares a `types` JS file (see config), cross-checks its GLSL UBO block against that file's `uniformTypes` and warns on drift (a member on one side only, or a type mismatch). luma keeps these two in sync by hand; nothing else sees both at once. Conservative: silent unless it can confidently read both sides.

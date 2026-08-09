@@ -13,11 +13,12 @@
 //!
 //! A [`Dialect`] models one ecosystem as data, not code: an optional per-stage
 //! prelude (implicit globals), an optional epilogue (a wrapper `main`), and a set
-//! of [`Rule`]s that expand a directive into GLSL. Built-in presets ([`maplibre`],
-//! [`shadertoy`]) are just pre-filled `Dialect`s; a project can select one, extend
-//! it, or declare its own rules in `glsl-lsp.toml`. [`autodetect`] sniffs a
-//! signature so an unconfigured checkout still works. Adding the next ecosystem is
-//! a preset or a few config lines — never a fork of the assembler.
+//! of [`Rule`]s that expand a directive into GLSL. Dialects are not written in Rust
+//! — they are parsed from presets (see [`crate::preset`]): bundled TOML files under
+//! `presets/` and a project's own `glslint.toml`, which use the identical schema.
+//! [`resolve`] picks the active dialect (an explicit preset, else detection),
+//! layering any project-local rules on top. Adding the next ecosystem is a preset
+//! file — never a fork of the assembler.
 //!
 //! The load-bearing principle: glslint does not replicate an ecosystem's runtime
 //! semantics. It only has to make every symbol resolve with the right *type*, so
@@ -96,6 +97,14 @@ pub struct Dialect {
     pub prelude_files_vertex: Vec<String>,
     /// Fragment-stage counterpart of `prelude_files_vertex`.
     pub prelude_files_fragment: Vec<String>,
+    /// Names of macros the project injects from JS at build time (maplibre's
+    /// `NUM_ILLUMINATION_SOURCES`). glslint supplies an `#ifndef`-guarded default so
+    /// they resolve. Declared explicitly by a preset to skip the discovery scan.
+    pub define_names: Vec<String>,
+    /// Opt in to *discovering* injected `#define NAME ${…}` macros by scanning the
+    /// project's JS/TS (in addition to `define_names`). Off by default — a scan
+    /// walks the repo, so a preset that can enumerate its macros should.
+    pub discover_defines: bool,
     /// Directive-expansion rules.
     pub rules: Vec<Rule>,
     /// Whether the deck.gl builtin prelude still applies. A non-deck dialect
@@ -224,8 +233,8 @@ impl Default for Preference {
 /// dialect work.
 pub fn resolve(pref: &Preference, source: &str, dir: &Path) -> Option<Dialect> {
     let base = match pref.preset.as_deref() {
-        Some(name) => by_name(name),
-        None if pref.auto => autodetect(source, dir),
+        Some(name) => crate::preset::by_name(name, dir),
+        None if pref.auto => crate::preset::detect(source, dir),
         None => None,
     };
 
@@ -252,161 +261,6 @@ pub fn resolve(pref: &Preference, source: &str, dir: &Path) -> Option<Dialect> {
     Some(d)
 }
 
-/// Look up a built-in preset by name. `"none"`/`"raw"` disable dialect handling.
-pub fn by_name(name: &str) -> Option<Dialect> {
-    match name {
-        "maplibre" | "mapbox" => Some(maplibre()),
-        "shadertoy" => Some(shadertoy()),
-        "none" | "raw" => Some(Dialect {
-            name: "none".into(),
-            deck: false,
-            ..Default::default()
-        }),
-        _ => None,
-    }
-}
-
-/// Pick a dialect from a shader's tell-tale signatures — its `source` and its
-/// directory `dir`. Only fires for unmistakable markers, so a plain deck/luma
-/// shader is never misclassified.
-pub fn autodetect(source: &str, dir: &Path) -> Option<Dialect> {
-    if source.contains("#pragma maplibre:") || source.contains("#pragma mapbox:") {
-        return Some(maplibre());
-    }
-    // ShaderToy's entry point is distinctive; the `void main` it lacks is supplied
-    // by the epilogue.
-    if source
-        .replace(char::is_whitespace, "")
-        .contains("voidmainImage(")
-    {
-        return Some(shadertoy());
-    }
-    // Environmental: a shader sitting next to maplibre's shared library is a
-    // maplibre shader even without a pragma. The pragma-free ones (background,
-    // clipping_mask, depth, …) still lean on `projectTile`, `fragColor`, and
-    // `u_projection_matrix` straight from that library, so they need it injected
-    // too. The `_prelude.*.glsl` basenames are maplibre-specific enough to be a
-    // safe signal — this is how deck is recognized by its package on disk.
-    if dir.join("_prelude.vertex.glsl").is_file() || dir.join("_prelude.fragment.glsl").is_file() {
-        return Some(maplibre());
-    }
-    None
-}
-
-/// The maplibre-gl-js / mapbox-gl-js `#pragma <ns>: define|initialize` DSL.
-///
-/// Expansion mirrors what maplibre's own `shaders.ts` emits: a `define` at global
-/// scope declares the property (as an attribute+varying in the data-driven branch,
-/// a uniform otherwise), and an `initialize` inside `main` binds it. glslint never
-/// defines `HAS_UNIFORM_u_*`, so glslang's preprocessor takes the data-driven
-/// branch — the one that exercises the most symbols. A project that wants the
-/// uniform branch checked instead can `#define HAS_UNIFORM_u_<name>` via a prelude.
-///
-/// It also injects maplibre's shared shader library — the sibling `_prelude` and
-/// `_projection_mercator` files the build concatenates ahead of every shader — so
-/// the functions they provide (`projectTile`, `projectLineThickness`,
-/// `unpack_mix_color`, …) and the globals they declare (`u_projection_matrix`,
-/// `PI`) resolve. Mercator is the canonical projection; its `projectTile`
-/// signatures are identical to globe's, so they satisfy a globe shader too.
-pub fn maplibre() -> Dialect {
-    let mut rules = Vec::new();
-    for ns in ["maplibre", "mapbox"] {
-        rules.push(Rule {
-            ns: ns.to_string(),
-            verb: Some("define".into()),
-            args: vec!["prec".into(), "type".into(), "name".into()],
-            vertex: Some(
-                "#ifndef HAS_UNIFORM_u_{name}\n\
-                 uniform lowp float u_{name}_t;\n\
-                 in {prec} {type} a_{name};\n\
-                 out {prec} {type} {name};\n\
-                 #else\n\
-                 uniform {prec} {type} u_{name};\n\
-                 #endif"
-                    .into(),
-            ),
-            fragment: Some(
-                "#ifndef HAS_UNIFORM_u_{name}\n\
-                 uniform lowp float u_{name}_t;\n\
-                 in {prec} {type} {name};\n\
-                 #else\n\
-                 uniform {prec} {type} u_{name};\n\
-                 #endif"
-                    .into(),
-            ),
-            compute: None,
-            any: None,
-        });
-        rules.push(Rule {
-            ns: ns.to_string(),
-            verb: Some("initialize".into()),
-            args: vec!["prec".into(), "type".into(), "name".into()],
-            vertex: Some(
-                "#ifndef HAS_UNIFORM_u_{name}\n\
-                 {name} = a_{name};\n\
-                 #else\n\
-                 {prec} {type} {name} = u_{name};\n\
-                 #endif"
-                    .into(),
-            ),
-            fragment: Some(
-                "#ifdef HAS_UNIFORM_u_{name}\n\
-                 {prec} {type} {name} = u_{name};\n\
-                 #endif"
-                    .into(),
-            ),
-            compute: None,
-            any: None,
-        });
-    }
-    Dialect {
-        name: "maplibre".into(),
-        deck: false,
-        rules,
-        prelude_files_vertex: vec![
-            "_prelude.vertex.glsl".into(),
-            "_projection_mercator.vertex.glsl".into(),
-        ],
-        prelude_files_fragment: vec![
-            "_prelude.fragment.glsl".into(),
-            "_projection_mercator.fragment.glsl".into(),
-        ],
-        ..Default::default()
-    }
-}
-
-/// ShaderToy: a fragment-only environment with a fixed set of implicit uniforms
-/// and a `mainImage` entry point instead of `main`. A pure-prelude dialect — the
-/// prelude declares the uniforms, and the epilogue supplies the `main` that drives
-/// `mainImage` when the source doesn't define one itself.
-pub fn shadertoy() -> Dialect {
-    Dialect {
-        name: "shadertoy".into(),
-        deck: false,
-        prelude_fragment: Some(
-            "// glslint ShaderToy prelude: implicit uniforms\n\
-             uniform vec3 iResolution;\n\
-             uniform float iTime;\n\
-             uniform float iTimeDelta;\n\
-             uniform float iFrameRate;\n\
-             uniform int iFrame;\n\
-             uniform vec4 iMouse;\n\
-             uniform vec4 iDate;\n\
-             uniform float iSampleRate;\n\
-             uniform vec3 iChannelResolution[4];\n\
-             uniform float iChannelTime[4];\n\
-             uniform sampler2D iChannel0;\n\
-             uniform sampler2D iChannel1;\n\
-             uniform sampler2D iChannel2;\n\
-             uniform sampler2D iChannel3;\n\
-             out vec4 glslint_fragColor;"
-                .into(),
-        ),
-        epilogue: Some("void main() { mainImage(glslint_fragColor, gl_FragCoord.xy); }".into()),
-        ..Default::default()
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used)] // test code: unwrap IS the assertion
 mod tests {
@@ -430,33 +284,55 @@ mod tests {
         assert_eq!(parse_pragma("#pragmatic: x"), None);
     }
 
+    /// A minimal dialect exercising the expansion engine, independent of any
+    /// preset's data — namespace `mx`, a `define` and an `initialize` verb.
+    fn engine_dialect() -> Dialect {
+        let rule = |verb: &str, vtx: &str, frag: Option<&str>| Rule {
+            ns: "mx".into(),
+            verb: Some(verb.into()),
+            args: vec!["prec".into(), "type".into(), "name".into()],
+            vertex: Some(vtx.into()),
+            fragment: frag.map(str::to_string),
+            compute: None,
+            any: None,
+        };
+        Dialect {
+            name: "test".into(),
+            rules: vec![
+                rule(
+                    "define",
+                    "in {prec} {type} a_{name};\nout {prec} {type} {name};",
+                    Some("in {prec} {type} {name};"),
+                ),
+                rule("initialize", "{name} = a_{name};", None),
+            ],
+            ..Default::default()
+        }
+    }
+
     #[test]
-    fn maplibre_define_expands_per_stage() {
-        let d = maplibre();
+    fn define_expands_per_stage() {
+        let d = engine_dialect();
         let v = d
-            .expand_line("#pragma maplibre: define lowp float opacity", Stage::Vertex)
+            .expand_line("#pragma mx: define lowp float opacity", Stage::Vertex)
             .unwrap();
         // Vertex declares the attribute and the varying named after the property.
-        assert!(v.iter().any(|l| l.contains("in lowp float a_opacity;")));
-        assert!(v.iter().any(|l| l.contains("out lowp float opacity;")));
+        assert!(v.iter().any(|l| l == "in lowp float a_opacity;"));
+        assert!(v.iter().any(|l| l == "out lowp float opacity;"));
 
         let f = d
-            .expand_line(
-                "#pragma maplibre: define lowp float opacity",
-                Stage::Fragment,
-            )
+            .expand_line("#pragma mx: define lowp float opacity", Stage::Fragment)
             .unwrap();
         // Fragment receives it as a plain varying, no attribute.
-        assert!(f.iter().any(|l| l.contains("in lowp float opacity;")));
+        assert!(f.iter().any(|l| l == "in lowp float opacity;"));
         assert!(!f.iter().any(|l| l.contains("a_opacity")));
     }
 
     #[test]
-    fn maplibre_initialize_binds_the_name() {
-        let d = maplibre();
-        let v = d
+    fn initialize_binds_the_name() {
+        let v = engine_dialect()
             .expand_line(
-                "    #pragma maplibre: initialize lowp float opacity",
+                "    #pragma mx: initialize lowp float opacity",
                 Stage::Vertex,
             )
             .unwrap();
@@ -464,28 +340,20 @@ mod tests {
     }
 
     #[test]
-    fn mapbox_namespace_uses_the_same_rules() {
-        let v = maplibre()
-            .expand_line("#pragma mapbox: define highp vec4 color", Stage::Vertex)
-            .unwrap();
-        assert!(v.iter().any(|l| l.contains("out highp vec4 color;")));
-    }
-
-    #[test]
     fn non_matching_lines_are_left_verbatim() {
-        let d = maplibre();
+        let d = engine_dialect();
         assert!(
             d.expand_line("uniform vec2 u_translation;", Stage::Vertex)
                 .is_none()
         );
         // A namespaced pragma whose verb we don't know is not our business.
         assert!(
-            d.expand_line("#pragma maplibre: whoknows x", Stage::Vertex)
+            d.expand_line("#pragma mx: whoknows x", Stage::Vertex)
                 .is_none()
         );
         // Wrong token count for a known verb → left verbatim.
         assert!(
-            d.expand_line("#pragma maplibre: define float x", Stage::Vertex)
+            d.expand_line("#pragma mx: define float x", Stage::Vertex)
                 .is_none()
         );
     }
@@ -502,52 +370,9 @@ mod tests {
     }
 
     #[test]
-    fn autodetect_recognizes_maplibre_and_shadertoy() {
-        // A directory with no maplibre shared library, so only source signatures
-        // can fire.
-        let bare = Path::new("/glslint-nonexistent-test-dir");
-        assert_eq!(
-            autodetect("#pragma maplibre: define lowp float opacity\n", bare).map(|d| d.name),
-            Some("maplibre".to_string())
-        );
-        assert_eq!(
-            autodetect("void mainImage( out vec4 c, in vec2 p ) {}\n", bare).map(|d| d.name),
-            Some("shadertoy".to_string())
-        );
-        assert_eq!(
-            autodetect("out vec4 c;\nvoid main(){}\n", bare).map(|d| d.name),
-            None
-        );
-    }
-
-    #[test]
-    fn autodetect_fires_on_a_sibling_maplibre_library() {
-        // A pragma-free shader (background, clipping_mask, …) is still a maplibre
-        // shader when it sits next to the shared `_prelude.*.glsl` library.
-        let dir = std::env::temp_dir().join(format!(
-            "glslint-detect-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        let src = "void main() { gl_Position = projectTile(vec2(0.0)); }\n";
-        // No library file yet → no signature.
-        assert_eq!(autodetect(src, &dir).map(|d| d.name), None);
-        // Drop the library in → detected as maplibre.
-        std::fs::write(dir.join("_prelude.vertex.glsl"), "// lib\n").unwrap();
-        assert_eq!(
-            autodetect(src, &dir).map(|d| d.name),
-            Some("maplibre".into())
-        );
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
     fn has_main_detects_the_entry_point() {
         assert!(has_main("void main() { }"));
         assert!(has_main("void  main(){}"));
         assert!(!has_main("void mainImage(out vec4 c, in vec2 p){}"));
     }
-
-    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 }
