@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/johncarmack1984/glslint/compare/v0.4.0...v0.4.1) (2026-08-09)
+
+
+### Bug Fixes
+
+* **assemble:** detect spelled-out .vertex/.fragment/.compute stage names ([#36](https://github.com/johncarmack1984/glslint/issues/36)) ([e93da5d](https://github.com/johncarmack1984/glslint/commit/e93da5d48d13ceffae8680804bcd9a088b7e8eb9))
+
 ## [0.4.0](https://github.com/johncarmack1984/glslint/compare/v0.3.1...v0.4.0) (2026-07-22)
 
 
