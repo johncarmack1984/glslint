@@ -27,17 +27,6 @@ impl Stage {
     }
 }
 
-/// deck.gl `project32` stubs. Bodies are trivial — only the signatures matter
-/// for type/semantic checking of the consumer shader.
-pub const BUILTIN_PRELUDE: &str = r#"// glslint built-in prelude: deck.gl project32
-vec4 project_position_to_clipspace(vec3 position, vec3 position64Low, vec3 offset) {
-  return vec4(position + position64Low + offset, 1.0);
-}
-vec2 project_pixel_size_to_clipspace(vec2 pixels) { return pixels; }
-vec3 project_position(vec3 position) { return position; }
-vec4 project_common_position_to_clipspace(vec4 position) { return position; }
-"#;
-
 /// Used when the target has no `#version` of its own. WebGL2/luma shaders are
 /// GLSL ES 3.00; glslangValidator validates that profile natively (combined
 /// samplers, combined-sampler function params, and all) with no source rewrites.
@@ -212,7 +201,9 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
     b.push_synthetic(DEFAULT_PRECISION);
 
     // A dialect's prelude declares its implicit globals (shadertoy's `iTime` &c.).
-    if let Some(d) = &dialect
+    // A deck dialect's prelude is the stub fallback, handled in the deck block below
+    // (node_modules signatures supersede it), so it's skipped here.
+    if let Some(d) = dialect.as_ref().filter(|d| !d.deck)
         && let Some(p) = d.prelude(stage)
     {
         b.push_synthetic(p);
@@ -268,14 +259,19 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
         }
     }
 
-    // The deck builtin prelude applies unless a non-deck dialect took over.
-    let deck_applies = dialect.as_ref().is_none_or(|d| d.deck);
-    if config.use_builtin_prelude && deck_applies {
+    // deck builtins apply when a deck dialect is active (detected or selected), or
+    // — with no dialect — when the config/luma derivation asks for them. A non-deck
+    // dialect (maplibre, shadertoy) turns them off.
+    let deck_active = match &dialect {
+        Some(d) => d.deck,
+        None => config.use_builtin_prelude,
+    };
+    if deck_active {
         // Prefer deck's real project functions from node_modules (extracted as
-        // empty-body stubs); fall back to the baked-in 4-function stub.
+        // empty-body stubs); fall back to the `deck` preset's stub prelude.
         let fns = crate::deck::project_fns(target.parent().unwrap_or(Path::new(".")));
         if fns.is_empty() {
-            b.push_synthetic(BUILTIN_PRELUDE);
+            b.push_synthetic(crate::preset::deck_prelude());
         } else {
             b.push_synthetic(&crate::deck::stubs(&fns));
         }

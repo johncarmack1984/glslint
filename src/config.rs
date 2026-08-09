@@ -155,31 +155,46 @@ impl Config {
     pub fn resolve_for(file: &Path) -> Config {
         let dir = file.parent().unwrap_or(Path::new("."));
 
-        if let Some(toml_path) = find_up(dir, "glsl-lsp.toml")
-            && let Ok(text) = std::fs::read_to_string(&toml_path)
-            && let Ok(cf) = toml::from_str::<ConfigFile>(&text)
-        {
-            let base = toml_path.parent().unwrap_or(Path::new("."));
+        // Read the project config (glslint.toml, else legacy glsl-lsp.toml).
+        let found = find_config(dir).and_then(|p| {
+            let text = std::fs::read_to_string(&p).ok()?;
+            let cf: ConfigFile = toml::from_str(&text).ok()?;
+            let base = p.parent().unwrap_or(Path::new(".")).to_path_buf();
+            Some((cf, base))
+        });
+        // The dialect preference comes from the file's `[dialect]` (or default) and
+        // applies on every path below — even when the file has no module wiring.
+        let dialect = found
+            .as_ref()
+            .map(|(cf, _)| dialect_pref(&cf.dialect))
+            .unwrap_or_default();
+
+        if let Some((cf, base)) = &found {
             // Per-shader bindings take precedence over the legacy global list.
             if !cf.shaders.is_empty() {
-                return resolve_bindings(file, &cf, base);
+                return resolve_bindings(file, cf, base);
             }
-            return Config {
-                preludes: join_all(base, &cf.preludes),
-                modules: join_all(base, &cf.modules),
-                use_builtin_prelude: cf.builtin_prelude.unwrap_or(true),
-                dialect: dialect_pref(&cf.dialect),
-            };
+            // Explicit module wiring (or an explicit deck toggle) wins. A file with
+            // only a preset definition falls through to derivation/zero-config, so a
+            // `glslint.toml` can hold just a preset without disabling luma discovery.
+            if !cf.modules.is_empty() || !cf.preludes.is_empty() || cf.builtin_prelude.is_some() {
+                return Config {
+                    preludes: join_all(base, &cf.preludes),
+                    modules: join_all(base, &cf.modules),
+                    use_builtin_prelude: cf.builtin_prelude.unwrap_or(true),
+                    dialect,
+                };
+            }
         }
 
-        // No glsl-lsp.toml — try to auto-derive the bindings from the JS
-        // `new Model({ modules })` calls before falling back to sibling discovery.
+        // No explicit module wiring — auto-derive luma bindings from the JS
+        // `new Model({ modules })` calls before falling back to zero-config.
         if let Some(d) = crate::derive::derive(file) {
             return Config {
                 preludes: Vec::new(),
                 modules: d.modules,
                 use_builtin_prelude: d.use_builtin_prelude,
-                dialect: crate::dialect::Preference::default(),
+                dialect,
             };
         }
 
@@ -191,7 +206,7 @@ impl Config {
             preludes: Vec::new(),
             modules: Vec::new(),
             use_builtin_prelude: true,
-            dialect: crate::dialect::Preference::default(),
+            dialect,
         }
     }
 }
@@ -246,7 +261,7 @@ fn join_all(base: &Path, rels: &[String]) -> Vec<PathBuf> {
 /// file, return `(module name, resolved types path)` for the drift check.
 pub fn drift_for(file: &Path) -> Option<(String, PathBuf)> {
     let dir = file.parent().unwrap_or(Path::new("."));
-    let toml_path = find_up(dir, "glsl-lsp.toml")?;
+    let toml_path = find_config(dir)?;
     let text = std::fs::read_to_string(&toml_path).ok()?;
     let cf: ConfigFile = toml::from_str(&text).ok()?;
     let base = toml_path.parent().unwrap_or(Path::new("."));
@@ -311,10 +326,36 @@ fn find_up(start: &Path, name: &str) -> Option<PathBuf> {
     None
 }
 
+/// The project's config file: prefer `glslint.toml` (the unified name, shared with
+/// presets), falling back to the legacy `glsl-lsp.toml`. Both hold the same module
+/// / shader / prelude config; `glslint.toml` may also carry a preset definition,
+/// which `preset.rs` reads independently (the two parsers each take their part).
+fn find_config(start: &Path) -> Option<PathBuf> {
+    find_up(start, "glslint.toml").or_else(|| find_up(start, "glsl-lsp.toml"))
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)] // test code: unwrap IS the assertion
 mod tests {
     use super::*;
+
+    #[test]
+    fn find_config_prefers_glslint_toml_over_legacy() {
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "glslint-cfg-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        // Only the legacy name present → found.
+        std::fs::write(dir.join("glsl-lsp.toml"), "").unwrap();
+        assert!(find_config(&dir).unwrap().ends_with("glsl-lsp.toml"));
+        // Both present → the unified name wins.
+        std::fs::write(dir.join("glslint.toml"), "").unwrap();
+        assert!(find_config(&dir).unwrap().ends_with("glslint.toml"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn glob_matches_filename_patterns() {

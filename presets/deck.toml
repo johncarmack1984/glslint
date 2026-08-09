@@ -1,0 +1,35 @@
+# deck.gl / luma.gl preset.
+#
+# deck's `project*` builtins are injected at link time, not written in the shader.
+# glslint prefers the *real* signatures resolved from node_modules (see src/deck.rs
+# — that part is dynamic and stays in code, enabling hover and go-to-definition into
+# the deck source); this preset provides the fallback stub prelude used when deck
+# isn't installed, plus detection, so deck is a first-class preset like the others.
+#
+# `deck = true` opts a dialect into that node_modules resolution. Top-level keys
+# (name, deck, prelude) precede the [table] header, per TOML.
+
+name = "deck"
+deck = true
+
+# Fallback stub prelude: type-correct, trivial bodies — only the signatures matter
+# for checking the consumer shader. Superseded by node_modules signatures when deck
+# is installed.
+prelude = """
+// deck.gl project32 stubs
+vec4 project_position_to_clipspace(vec3 position, vec3 position64Low, vec3 offset) {
+  return vec4(position + position64Low + offset, 1.0);
+}
+vec2 project_pixel_size_to_clipspace(vec2 pixels) { return pixels; }
+vec3 project_position(vec3 position) { return position; }
+vec4 project_common_position_to_clipspace(vec4 position) { return position; }"""
+
+# A shader calling a deck projection builtin is a deck shader. (luma's per-shader
+# `new Model({ modules: [project32] })` binding is resolved separately by derive.rs
+# — that stays, it's precise project-specific derivation, not a static signal.)
+[detect]
+source_contains = [
+  "project_position_to_clipspace",
+  "project_common_position_to_clipspace",
+  "project_pixel_size_to_clipspace",
+]

@@ -167,10 +167,25 @@ pub fn bundled() -> &'static [Preset] {
         [
             include_str!("../presets/maplibre.toml"),
             include_str!("../presets/shadertoy.toml"),
+            include_str!("../presets/deck.toml"),
         ]
         .iter()
         .filter_map(|t| parse(t).ok())
         .collect()
+    })
+}
+
+/// The `deck` preset's fallback stub prelude — deck's `project*` builtins as
+/// type-correct stubs, used when the real signatures can't be resolved from
+/// node_modules. Empty if the bundled deck preset is somehow missing.
+pub fn deck_prelude() -> &'static str {
+    static P: OnceLock<String> = OnceLock::new();
+    P.get_or_init(|| {
+        bundled()
+            .iter()
+            .find(|p| p.dialect.name == "deck")
+            .and_then(|p| p.dialect.prelude_any.clone())
+            .unwrap_or_default()
     })
 }
 
@@ -252,6 +267,26 @@ mod tests {
         let names: Vec<&str> = bundled().iter().map(|p| p.dialect.name.as_str()).collect();
         assert!(names.contains(&"maplibre"), "got {names:?}");
         assert!(names.contains(&"shadertoy"), "got {names:?}");
+        assert!(names.contains(&"deck"), "got {names:?}");
+    }
+
+    #[test]
+    fn deck_preset_provides_stub_prelude_and_detection() {
+        // The stub prelude (once hardcoded in assemble.rs) is now data in the deck
+        // preset, and a `deck = true` dialect that opts into node_modules resolution.
+        let bare = Path::new("/nonexistent-glslint");
+        let d = by_name("deck", bare).unwrap();
+        assert!(d.deck);
+        assert!(deck_prelude().contains("project_position_to_clipspace"));
+        // A shader calling a deck builtin is detected as deck.
+        assert_eq!(
+            detect(
+                "void main() { gl_Position = project_position_to_clipspace(a, b, c); }",
+                bare
+            )
+            .map(|d| d.name),
+            Some("deck".into())
+        );
     }
 
     #[test]

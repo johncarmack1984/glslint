@@ -39,7 +39,7 @@ cargo build
 ./target/debug/glslint lsp                               # language server over stdio
 ```
 
-`check` needs no config: it detects the shader's ecosystem from a bundled [preset](#shader-dialects--presets) (or a project's `glslint.toml`), discovers the project's shared library (any sibling `.glsl` with no `main`), and falls back to the built-in deck `project32` prelude. `glsl-lsp.toml` (walked up for) additionally wires luma's per-shader module bindings. A `.ts`/`.tsx`/`.js`/`.jsx` argument is scanned for GLSL embedded in tagged template literals instead of being treated as one shader (see below).
+`check` needs no config: it detects the shader's ecosystem from a bundled [preset](#shader-dialects--presets) (or a project's `glslint.toml`) — including deck.gl's `project32` builtins — and discovers the project's shared library (any sibling `.glsl` with no `main`). A project config file, `glslint.toml` (or the legacy `glsl-lsp.toml`), is walked up for and additionally wires luma's per-shader module bindings. A `.ts`/`.tsx`/`.js`/`.jsx` argument is scanned for GLSL embedded in tagged template literals instead of being treated as one shader (see below).
 
 The faithful form mirrors luma's own model: name the modules once, then bind each shader to the modules it actually uses (the `new Model({modules: [...]})` call in JS). Each shader then gets exactly its modules, so referencing a uniform block the shader doesn't have is flagged instead of silently resolved:
 
@@ -94,13 +94,13 @@ The fourth is an **in-file directive DSL** — a `#pragma` an ecosystem's build 
 
 ### Presets
 
-A preset is ecosystem knowledge as **data**, not code. glslint ships presets for maplibre/mapbox and ShaderToy in [`presets/`](presets/), compiled in and applied automatically when their `[detect]` rules match. The linter core contains none of it. A preset declares:
+A preset is ecosystem knowledge as **data**, not code. glslint ships presets for maplibre/mapbox, ShaderToy, and deck.gl in [`presets/`](presets/), compiled in and applied automatically when their `[detect]` rules match. The linter core contains none of it — even deck's `project32` stub prelude lives in [`presets/deck.toml`](presets/deck.toml) (the real signatures are still resolved from `node_modules` for hover/go-to-definition). A preset declares:
 
 - **when it applies** (`[detect]`: a source substring like `#pragma maplibre:`, or a sibling file like `_prelude.vertex.glsl` — so even a pragma-free maplibre shader is recognized);
 - **the `#pragma` transform** (`[[expand]]` rules);
 - and, for speed, the explicit shared-**`library`** files and injected **`defines`** so the core can skip discovery.
 
-A project configures glslint by dropping a **`glslint.toml`** at its root — using the *identical schema*. So defining a private ecosystem and shipping a bundled preset are the same act; the bundled files are examples to copy. The schema is published at [`schema/glslint.schema.json`](schema/glslint.schema.json).
+A project configures glslint by dropping a **`glslint.toml`** at its root — using the *identical schema*. So defining a private ecosystem and shipping a bundled preset are the same act; the bundled files are examples to copy. The schema is published at [`schema/glslint.schema.json`](schema/glslint.schema.json). `glslint.toml` is also the unified config file for luma's `[[module]]`/`[[shader]]` bindings (the legacy `glsl-lsp.toml` name still works).
 
 ```toml
 # glslint.toml — teach glslint a house #pragma DSL
