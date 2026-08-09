@@ -76,6 +76,11 @@ jobs:
           node-version: 'lts/*'
       - name: Check the drift guard without touching tracked files
         run: node npm/prepare.mjs --version 0.0.0 --dry-run
+      # Same guard for the Homebrew formula: render it (with placeholder
+      # checksums) so a platform-table or template break surfaces on the PR, not
+      # at release time.
+      - name: Check the Homebrew formula renders
+        run: node homebrew/prepare.mjs --version 0.0.0 --dry-run
       - name: Build
         run: cargo build --locked
       # One debug binary stands in for all four release assets: this checks the

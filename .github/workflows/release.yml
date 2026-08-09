@@ -179,6 +179,52 @@ jobs:
           done
           npm publish ./npm/glslint --access public
 
+  homebrew:
+    # The Homebrew channel: regenerate the tap's formula from the release
+    # binaries and push it to johncarmack1984/homebrew-tap, so `brew upgrade`
+    # picks up each new version. Needs `build`, since it checksums exactly the
+    # binaries that job attached to the release.
+    #
+    # Pushing to another repo is beyond GITHUB_TOKEN's scope, so this uses a
+    # dedicated PAT (HOMEBREW_TAP_TOKEN, contents:write on the tap). Every step
+    # is skipped — not failed — when the secret is unset, so the release never
+    # breaks before the tap is wired up, exactly like publish-extension below.
+    needs: [release-please, build]
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TAG: ${{ needs.release-please.outputs.tag_name }}
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
+        with:
+          node-version: 'lts/*'
+      - name: Download the release binaries
+        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$TAG" --dir dist --pattern 'glslint-*'
+      - name: Generate the formula
+        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
+        run: node homebrew/prepare.mjs --version "$TAG" --binaries dist --out glslint.rb
+      - name: Push it to the tap
+        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
+        run: |
+          git clone --depth 1 \
+            "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/johncarmack1984/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          cp glslint.rb tap/Formula/glslint.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/glslint.rb
+          # Nothing to do if a re-run regenerates an identical formula.
+          git diff --cached --quiet || git commit -m "glslint ${TAG#v}"
+          git push
+
   publish-extension:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
