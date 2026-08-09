@@ -19,6 +19,7 @@ mod dialect;
 mod discover;
 mod drift;
 mod embed;
+mod include;
 mod lints;
 mod lsp;
 mod preset;

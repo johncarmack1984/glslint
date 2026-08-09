@@ -236,8 +236,11 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
     // works on an unfamiliar project with no filename baked into the linter.
     // Injected verbatim, mapped to their own path (a diagnostic inside one lands
     // there). Skipped when the project wired modules explicitly (`config.modules`,
-    // e.g. luma `[[shader]]` bindings), which inject below, and for a deck dialect.
-    if dialect.as_ref().is_none_or(|d| !d.deck) && config.modules.is_empty() {
+    // e.g. luma `[[shader]]` bindings), for a deck dialect, or when the shader uses
+    // `#include` — an explicit dependency list, which (like modules) supersedes
+    // discovery so an included file isn't also injected as a library.
+    let uses_include = lines.iter().any(|l| crate::include::parse(l).is_some());
+    if dialect.as_ref().is_none_or(|d| !d.deck) && config.modules.is_empty() && !uses_include {
         let explicit: Vec<PathBuf> = dialect
             .as_ref()
             .map(|d| d.prelude_files(stage))
@@ -291,10 +294,12 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
         }
     }
 
-    // The rest of the original, every line except the hoisted `#version`. A dialect
-    // may expand a directive line into several declarations; each keeps the loc of
-    // the pragma it came from, so a diagnostic inside the expansion points at the
-    // author's `#pragma`.
+    // The rest of the original, every line except the hoisted `#version`. Two line
+    // rewrites can apply: a `#include` is spliced (resolved by glslint, since
+    // glslang can't over stdin), and a dialect may expand a directive into several
+    // declarations. Each spliced/expanded line keeps the loc of its true source, so
+    // a diagnostic lands on the included file or the author's `#pragma`.
+    let mut included: Vec<PathBuf> = target.canonicalize().ok().into_iter().collect();
     for (i, l) in lines.iter().enumerate() {
         if Some(i) == vidx {
             continue;
@@ -303,6 +308,12 @@ fn assemble_stage(target: &Path, source: &str, config: &Config, stage: Stage) ->
             path: target.to_path_buf(),
             line: line_no(i),
         };
+        if let Some(spliced) = crate::include::expand(l, dir, &mut included) {
+            for (line, iloc) in spliced {
+                b.push(line, Some(iloc));
+            }
+            continue;
+        }
         match dialect.as_ref().and_then(|d| d.expand_line(l, stage)) {
             Some(expanded) => {
                 for e in expanded {
