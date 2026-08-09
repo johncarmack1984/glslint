@@ -118,7 +118,7 @@ fn index_deck_builtins(idx: &mut SymbolIndex, a: &Assembled) {
     let dir = a.target.parent().unwrap_or(Path::new("."));
     let fns = crate::deck::project_fns(dir);
     if fns.is_empty() {
-        for line in crate::assemble::BUILTIN_PRELUDE.lines() {
+        for line in crate::preset::deck_prelude().lines() {
             if let Some((name, sig)) = builtin_signature(line.trim()) {
                 idx.builtins.entry(name).or_insert(Builtin {
                     signature: sig,

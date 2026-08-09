@@ -2,7 +2,9 @@
 
 A **preset** teaches glslint about one shader ecosystem — as data, not code. Every preset in this directory is compiled into the binary and applied automatically when its `[detect]` rules match. The linter core carries no ecosystem-specific knowledge; it all lives here.
 
-The files in this directory (`maplibre.toml`, `shadertoy.toml`, …) use the **exact same schema** a project can drop at its own root as `glslint.toml`. So shipping a preset here and configuring a private project are the same act — the bundled presets are just examples you can copy. The schema is published at [`schema/glslint.schema.json`](../schema/glslint.schema.json); point your editor at it (via SchemaStore, keyed on the `glslint.toml` filename) for validation and autocomplete.
+The files in this directory (`maplibre.toml`, `shadertoy.toml`, `deck.toml`, …) use the **exact same schema** a project can drop at its own root as `glslint.toml`. So shipping a preset here and configuring a private project are the same act — the bundled presets are just examples you can copy. The schema is published at [`schema/glslint.schema.json`](../schema/glslint.schema.json); point your editor at it (via SchemaStore, keyed on the `glslint.toml` filename) for validation and autocomplete.
+
+`deck.toml` is the smallest full example of the `deck = true` builtin path: its `prelude` is the stub fallback, while the real deck signatures are resolved dynamically from `node_modules` (in `src/deck.rs`) when available.
 
 ## Why a preset, when discovery is automatic
 
