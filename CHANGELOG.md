@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/johncarmack1984/glslint/compare/v0.4.1...v0.5.0) (2026-08-09)
+
+
+### Features
+
+* **vscode:** add extension icon ([#38](https://github.com/johncarmack1984/glslint/issues/38)) ([7d37fc8](https://github.com/johncarmack1984/glslint/commit/7d37fc8e9f0f46158559897c50b26395afe0b372))
+
 ## [0.4.1](https://github.com/johncarmack1984/glslint/compare/v0.4.0...v0.4.1) (2026-08-09)
 
 
