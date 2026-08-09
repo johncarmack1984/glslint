@@ -121,11 +121,25 @@ impl Builder {
 pub fn detect_stage(path: &Path) -> Option<Stage> {
     let name = path.file_name()?.to_str()?;
     let n = name.to_ascii_lowercase();
-    if n.contains(".vert.") || n.ends_with(".vert") || n.ends_with(".vs") {
+    if n.contains(".vert.")
+        || n.contains(".vertex.")
+        || n.ends_with(".vert")
+        || n.ends_with(".vertex")
+        || n.ends_with(".vs")
+    {
         Some(Stage::Vertex)
-    } else if n.contains(".frag.") || n.ends_with(".frag") || n.ends_with(".fs") {
+    } else if n.contains(".frag.")
+        || n.contains(".fragment.")
+        || n.ends_with(".frag")
+        || n.ends_with(".fragment")
+        || n.ends_with(".fs")
+    {
         Some(Stage::Fragment)
-    } else if n.contains(".comp.") || n.ends_with(".comp") {
+    } else if n.contains(".comp.")
+        || n.contains(".compute.")
+        || n.ends_with(".comp")
+        || n.ends_with(".compute")
+    {
         Some(Stage::Compute)
     } else {
         None
@@ -296,8 +310,27 @@ mod tests {
             detect_stage(Path::new("sim.comp.glsl")),
             Some(Stage::Compute)
         );
+        // The spelled-out convention (maplibre-gl-js and friends).
+        assert_eq!(
+            detect_stage(Path::new("line.vertex.glsl")),
+            Some(Stage::Vertex)
+        );
+        assert_eq!(
+            detect_stage(Path::new("line.fragment.glsl")),
+            Some(Stage::Fragment)
+        );
         // A bare module fragment is not a stage shader.
         assert_eq!(detect_stage(Path::new("windUniforms.glsl")), None);
+    }
+
+    #[test]
+    fn spelled_out_vertex_stage_is_not_wrapped_as_fragment() {
+        // A vertex-stage integer input needs no `flat`; the None fallback wraps as
+        // a fragment shader, where the same declaration is an error. Regression
+        // for maplibre-style `*.vertex.glsl` naming.
+        let src = "#version 300 es\nlayout(location = 0) in ivec2 a_pos_normal;\nvoid main() { gl_Position = vec4(vec2(a_pos_normal >> 1), 0.0, 1.0); }\n";
+        let a = assemble(Path::new("line.vertex.glsl"), src, &no_config());
+        assert_eq!(a.stage, Stage::Vertex);
     }
 
     #[test]
