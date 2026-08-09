@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.0](https://github.com/johncarmack1984/glslint/compare/v0.7.0...v0.8.0) (2026-08-09)
+
+
+### Features
+
+* **dialect:** generalizable core + presets as data ([#46](https://github.com/johncarmack1984/glslint/issues/46)) ([80c4f81](https://github.com/johncarmack1984/glslint/commit/80c4f81d68501ce451d3b5d395b1eefe66e7b09f))
+* **include:** resolve GL_GOOGLE_include_directive #include directives ([#49](https://github.com/johncarmack1984/glslint/issues/49)) ([ae8e355](https://github.com/johncarmack1984/glslint/commit/ae8e355707518aeb5f3e104033b7bcf0344a320d))
+* **preset:** express deck.gl as a preset and unify the config filename ([#48](https://github.com/johncarmack1984/glslint/issues/48)) ([2ce01d5](https://github.com/johncarmack1984/glslint/commit/2ce01d503234a8f23e028502f253107cdb5b8fa7))
+
 ## [0.7.0](https://github.com/johncarmack1984/glslint/compare/v0.6.0...v0.7.0) (2026-08-09)
 
 
