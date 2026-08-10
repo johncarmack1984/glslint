@@ -14,14 +14,19 @@ name: CI
 # The catch: release-please authors that PR as github-actions[bot], and GitHub
 # gates the pull_request run from a bot-authored PR behind manual approval, so it
 # never starts, no check runs are created, and the required checks sit unreported
-# forever. So release.yml dispatches this workflow (workflow_dispatch) onto the
-# release-please branch instead — API-triggered runs carrying GITHUB_TOKEN are
-# exempt from that approval gate and do start. Each job below skips itself on the
-# release-please branch (matched via head_ref on a PR run, or ref_name on the
-# dispatched run); a skipped job reports Success and so satisfies the required
-# check, letting the release PR go green with no intervention. On a workflow_call
-# from a push the ref_name is 'main', so the full suite still runs on main. (If a
-# fourth required check is ever added, give it the same guard.)
+# forever. So release.yml stamps those three checks as skipped directly via the
+# Checks API instead — only GitHub Apps can create check runs, and GITHUB_TOKEN
+# is the Actions app's token, so the stamps satisfy the ruleset's app-pinned
+# contexts, and a check whose conclusion is 'skipped' counts as passing, letting
+# the release PR go green with no intervention. (Dispatching this workflow onto
+# the release branch can't be trusted for that: the branch is only rebuilt when
+# the changelog changes, so its copy of this file — and its workflow_dispatch
+# trigger — can be stale.) The workflow_dispatch trigger and each job's skip
+# guard below stay for manual runs: a job skips itself on the release-please
+# branch (matched via head_ref on a PR run, or ref_name on a dispatched run),
+# while on a workflow_call from a push the ref_name is 'main', so the full suite
+# still runs on main. (If a fourth required check is ever added, give it the
+# same guard.)
 
 on:
   pull_request:
