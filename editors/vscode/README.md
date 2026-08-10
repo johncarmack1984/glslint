@@ -4,7 +4,7 @@ A thin LSP client that runs the `glslint` binary in `lsp` mode and surfaces its 
 
 ## Setup
 
-The extension resolves the `glslint` binary in this order: an explicit `glslint.path` setting → a local install (`~/.cargo/bin/glslint`, then PATH) → otherwise it **downloads** the prebuilt binary for your platform from this repo's GitHub Release and caches it in the extension's storage. So the only hard requirement is `glslangValidator` (glslint shells out to it):
+The extension manages its own `glslint` binary and keeps it on the extension's exact version, so you never have to remember to update it. It resolves the binary like so: an explicit `glslint.path` setting (a dev override, used verbatim) → an auto-detected local install (`~/.cargo/bin/glslint`, then PATH) **only if its version matches the extension** → otherwise it **downloads** the version-matched prebuilt binary for your platform from this repo's GitHub Release and caches it in the extension's storage (upgrading automatically whenever the extension updates). A stale `cargo install glslint` is therefore ignored rather than silently serving an old LSP. So the only hard requirement is `glslangValidator` (glslint shells out to it):
 
 ```sh
 brew install glslang
@@ -27,7 +27,7 @@ cd editors/vscode && npm install
 - **Dev host (fastest):** open the `editors/vscode` folder in VS Code/Cursor and press `F5`. That launches an Extension Development Host; open your `deck-wind-layer` folder in it and open a shader (e.g. `src/shaders/draw.vert.glsl`).
 - **Install for real:** `npx @vscode/vsce package` here, then install the resulting `.vsix` (`code --install-extension glslint-<version>.vsix`).
 
-If you didn't `cargo install` (e.g. you want the debug binary), point the setting at it:
+If you didn't `cargo install` (e.g. you want the debug binary), point the setting at it — `glslint.path` is the escape hatch for local builds and is always used verbatim, so it bypasses the version check (you get a one-time warning, not a fallback, if it differs from the extension's version):
 ```json
 { "glslint.path": "/absolute/path/to/glslint/target/debug/glslint" }
 ```

@@ -3,5 +3,6 @@
 .vscodeignore
 icon.svg
 package-lock.json
+check-platforms.mjs
 **/.DS_Store
 **/*.map

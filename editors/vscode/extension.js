@@ -2,9 +2,16 @@
 // diagnostics/hover/completion/etc. for GLSL documents. Works in VS Code and
 // Cursor (same extension API).
 //
-// Binary resolution, in order: an explicit `glslint.path` setting; a locally
-// installed binary (~/.cargo/bin or PATH); else a prebuilt binary downloaded once
-// from this repo's GitHub Release and cached in the extension's storage.
+// Binary resolution keeps the LSP pinned to this extension's exact version.
+// An explicit `glslint.path` is a dev override, honored verbatim (a version
+// mismatch only warns). Otherwise an auto-detected binary (~/.cargo/bin or PATH)
+// is used ONLY when its `--version` matches this extension — so a stale
+// `cargo install glslint` can never silently shadow the pinned LSP. With no
+// matching local binary, the extension downloads its own version-pinned binary
+// from this repo's GitHub Release and caches it; that download is now the normal
+// path and upgrades automatically on every extension update. If the download
+// fails (offline/404) it falls back to the best local binary it can find,
+// mismatch and all — a slightly-stale LSP beats none.
 
 const { workspace, window, ProgressLocation } = require("vscode");
 const { LanguageClient } = require("vscode-languageclient/node");
@@ -12,38 +19,57 @@ const os = require("os");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
+const cp = require("child_process");
 
 const REPO = "johncarmack1984/glslint";
+const pkg = require("./package.json");
 // Binary version to download: this extension's own version (release-please keeps
 // package.json in lockstep with the crate), prefixed with `v` for the release tag.
-const VERSION = `v${require("./package.json").version}`;
+const VERSION = `v${pkg.version}`;
+
+// node `platform-arch` -> the Rust target triple in the release asset names. A
+// local copy the packaged .vsix carries (it can't read npm's copy at install
+// time); a CI drift guard (check-platforms.mjs) pins it to the single source of
+// truth, npm/glslint/platforms.json.
+const TARGETS = require("./targets.json");
 
 let client;
 
 /// node platform/arch -> the Rust target triple used in the release asset names.
 function rustTarget() {
-  if (process.platform === "darwin") {
-    return process.arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin";
-  }
-  if (process.platform === "linux" && process.arch === "x64") return "x86_64-unknown-linux-gnu";
-  if (process.platform === "win32" && process.arch === "x64") return "x86_64-pc-windows-msvc";
-  return null;
+  return TARGETS[`${process.platform}-${process.arch}`] || null;
 }
 
 function exeName() {
   return process.platform === "win32" ? "glslint.exe" : "glslint";
 }
 
-/// A locally installed binary, if any: explicit setting, then ~/.cargo/bin, then PATH.
-function localBinary() {
-  const configured = workspace.getConfiguration("glslint").get("path");
-  if (configured) return configured;
-  const cargoBin = path.join(os.homedir(), ".cargo", "bin", exeName());
-  if (fs.existsSync(cargoBin)) return cargoBin;
-  for (const dir of (process.env.PATH || "").split(path.delimiter)) {
-    if (dir && fs.existsSync(path.join(dir, exeName()))) return path.join(dir, exeName());
+/// Run `<cmd> --version` and return the reported semver (`glslint <semver>`, see
+/// src/main.rs), or null if it can't be run or the output doesn't parse. Used to
+/// gate auto-detected binaries so only an exact version match is accepted.
+function binaryVersion(cmd) {
+  try {
+    const res = cp.spawnSync(cmd, ["--version"], { timeout: 3000, encoding: "utf8" });
+    if (res.error || res.status !== 0 || !res.stdout) return null;
+    const m = res.stdout.trim().match(/^glslint (\S+)$/);
+    return m ? m[1] : null;
+  } catch {
+    return null;
   }
-  return null;
+}
+
+/// Auto-detected candidate binaries, best-first: ~/.cargo/bin, then each PATH dir.
+/// Excludes the explicit `glslint.path` setting, which is handled separately.
+function localCandidates() {
+  const candidates = [];
+  const cargoBin = path.join(os.homedir(), ".cargo", "bin", exeName());
+  if (fs.existsSync(cargoBin)) candidates.push(cargoBin);
+  for (const dir of (process.env.PATH || "").split(path.delimiter)) {
+    if (!dir) continue;
+    const p = path.join(dir, exeName());
+    if (fs.existsSync(p)) candidates.push(p);
+  }
+  return candidates;
 }
 
 function download(url, dest) {
@@ -88,16 +114,69 @@ async function downloadBinary(context) {
   return dest;
 }
 
+/// Delete cached downloads from previous extension versions; only VERSION's dir
+/// is kept, so the cache can't grow unbounded across updates. Best-effort.
+function pruneOldDownloads(context) {
+  const root = context.globalStorageUri.fsPath;
+  let entries;
+  try {
+    entries = fs.readdirSync(root);
+  } catch {
+    return; // storage dir not created yet — nothing cached
+  }
+  for (const name of entries) {
+    // Only touch our own version-tagged dirs (`v<major>…`); never anything else
+    // that might live under globalStorage.
+    if (name === VERSION || !/^v\d/.test(name)) continue;
+    try {
+      fs.rmSync(path.join(root, name), { recursive: true, force: true });
+    } catch {
+      // ignore — a stale dir that won't delete isn't worth failing activation
+    }
+  }
+}
+
+/// Resolve the `glslint` command to launch. Returns { command, explicit } where
+/// `explicit` marks a user-set `glslint.path` (checked for version match after
+/// the LSP starts, not here). Throws only when nothing is usable, letting the
+/// caller fall back to `glslint` on PATH.
 async function resolveCommand(context) {
-  const local = localBinary();
-  if (local) return local;
-  return downloadBinary(context); // throws if unavailable; caller falls back
+  // 1. Explicit override: honored verbatim. Its version is checked post-start
+  //    via the LSP handshake (serverInfo.version) — no extra process spawn.
+  const configured = workspace.getConfiguration("glslint").get("path");
+  if (configured) return { command: configured, explicit: true };
+
+  // 2. An auto-detected binary is used only when its version matches this
+  //    extension, so a stale install can never shadow the pinned LSP.
+  const candidates = localCandidates();
+  for (const cand of candidates) {
+    if (binaryVersion(cand) === pkg.version) return { command: cand, explicit: false };
+  }
+
+  // 3. No match: download this extension's pinned binary (the normal path).
+  try {
+    return { command: await downloadBinary(context), explicit: false };
+  } catch (err) {
+    // 4. Download failed (offline/404): a slightly-stale local LSP beats none.
+    if (candidates.length) {
+      window.showWarningMessage(
+        `glslint: couldn't download ${VERSION} (${err.message}); using ${candidates[0]}, ` +
+          `which may be a different version.`,
+      );
+      return { command: candidates[0], explicit: false };
+    }
+    throw err; // caller falls back to `glslint` on PATH
+  }
 }
 
 async function activate(context) {
+  // Tidy caches from older extension versions on every activation (cheap).
+  pruneOldDownloads(context);
+
   let command = "glslint";
+  let explicit = false;
   try {
-    command = await resolveCommand(context);
+    ({ command, explicit } = await resolveCommand(context));
   } catch (err) {
     window.showWarningMessage(`glslint: ${err.message}. Falling back to \`glslint\` on PATH.`);
   }
@@ -117,12 +196,27 @@ async function activate(context) {
   };
 
   client = new LanguageClient("glslint", "glslint", serverOptions, clientOptions);
-  client.start().catch((err) => {
-    window.showErrorMessage(
-      `glslint: couldn't start "${command} lsp". Install it with \`cargo install --path .\` ` +
-        `in the glslint repo, or set "glslint.path". ${err}`,
-    );
-  });
+  client
+    .start()
+    .then(() => {
+      // Only an explicit `glslint.path` can be a mismatched version at this point
+      // (auto-detected binaries are version-gated before start, downloads are
+      // pinned). serverInfo.version comes from the LSP handshake — no extra spawn.
+      if (!explicit) return;
+      const serverVersion = client.initializeResult?.serverInfo?.version;
+      if (serverVersion && serverVersion !== pkg.version) {
+        window.showWarningMessage(
+          `glslint.path points at glslint ${serverVersion}, but this extension expects ` +
+            `${pkg.version} — diagnostics may differ. Clear "glslint.path" to use the managed binary.`,
+        );
+      }
+    })
+    .catch((err) => {
+      window.showErrorMessage(
+        `glslint: couldn't start "${command} lsp". Install it with \`cargo install --path .\` ` +
+          `in the glslint repo, or set "glslint.path". ${err}`,
+      );
+    });
 }
 
 function deactivate() {
