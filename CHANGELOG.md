@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/johncarmack1984/glslint/compare/v0.8.0...v0.8.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* **vscode:** keep the language server binary version-matched to the extension ([#52](https://github.com/johncarmack1984/glslint/issues/52)) ([d81e54f](https://github.com/johncarmack1984/glslint/commit/d81e54fa213d25bb2d9ddca0e34edf08b560bee7))
+
 ## [0.8.0](https://github.com/johncarmack1984/glslint/compare/v0.7.0...v0.8.0) (2026-08-09)
 
 
