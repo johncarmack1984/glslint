@@ -76,7 +76,7 @@
         "glslint.path": {
           "type": "string",
           "default": "",
-          "description": "Path to the glslint executable. Leave empty to auto-resolve (~/.cargo/bin/glslint from `cargo install --path .`, then `glslint` on PATH). Set an absolute path to override."
+          "description": "Path to the glslint executable — a dev override, used verbatim (if its version differs from the extension you get a warning, not a fallback). Leave empty to auto-resolve: a local ~/.cargo/bin/glslint or `glslint` on PATH is used only when its version matches the extension; otherwise the extension downloads and manages its own version-matched binary."
         }
       }
     }

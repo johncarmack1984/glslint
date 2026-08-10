@@ -98,6 +98,12 @@ jobs:
       # at release time.
       - name: Check the Homebrew formula renders
         run: node homebrew/prepare.mjs --version 0.0.0 --dry-run
+      # The VS Code extension ships its own copy of the platform table (the .vsix
+      # can't read npm's at install time). Assert it still matches so the third
+      # hardcoded copy can't drift from the source of truth. This job's
+      # release-please branch skip (see header) covers this step too.
+      - name: Check the extension platform table matches
+        run: node editors/vscode/check-platforms.mjs
       - name: Build
         run: cargo build --locked
       # One debug binary stands in for all four release assets: this checks the

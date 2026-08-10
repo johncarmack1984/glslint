@@ -226,7 +226,11 @@ jobs:
           git push
 
   publish-extension:
-    needs: release-please
+    # Needs `build`: the extension downloads its version-pinned binary from the
+    # release as the primary path now, so publishing it before `build` finishes
+    # uploading the `glslint-<target>` assets would 404 a fresh install in that
+    # window.
+    needs: [release-please, build]
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
