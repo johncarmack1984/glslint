@@ -11,18 +11,22 @@ name: CI
 # workflows), and main is already CI-gated on every push via the workflow_call
 # above, so re-running the whole suite on that PR is pure redundancy — yet its
 # three jobs are required status checks, so the PR can't merge until they report.
-# release-please commits with GITHUB_TOKEN, whose events don't reliably trigger
-# this workflow, so those checks would otherwise sit unreported and the release
-# PR would stay blocked, needing a human to re-trigger CI. Instead each job below
-# skips itself on the release-please branch; a skipped job reports Success and so
-# satisfies the required check, letting the release PR go green with no
-# intervention. On a workflow_call from a push the head_ref is empty, so the full
-# suite still runs on main. (If a fourth required check is ever added, give it the
-# same guard.)
+# The catch: release-please authors that PR as github-actions[bot], and GitHub
+# gates the pull_request run from a bot-authored PR behind manual approval, so it
+# never starts, no check runs are created, and the required checks sit unreported
+# forever. So release.yml dispatches this workflow (workflow_dispatch) onto the
+# release-please branch instead — API-triggered runs carrying GITHUB_TOKEN are
+# exempt from that approval gate and do start. Each job below skips itself on the
+# release-please branch (matched via head_ref on a PR run, or ref_name on the
+# dispatched run); a skipped job reports Success and so satisfies the required
+# check, letting the release PR go green with no intervention. On a workflow_call
+# from a push the ref_name is 'main', so the full suite still runs on main. (If a
+# fourth required check is ever added, give it the same guard.)
 
 on:
   pull_request:
   workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -38,7 +42,8 @@ jobs:
   test:
     # Skip on release-please's PR (see header) — a skipped job counts as a
     # passing required check, so the release PR merges without a full CI re-run.
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    # head_ref matches the PR run; ref_name the workflow_dispatch run.
+    if: ${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.ref_name, 'release-please--') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -72,7 +77,7 @@ jobs:
     # the real binary through the wrapper's shim. Without this, a broken
     # resolver or a platform table that has drifted from the wrapper's
     # optionalDependencies would only surface after publishing.
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: ${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.ref_name, 'release-please--') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -135,7 +140,7 @@ jobs:
         run: sccache --show-stats
 
   deny:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: ${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.ref_name, 'release-please--') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

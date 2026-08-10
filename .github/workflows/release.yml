@@ -34,12 +34,31 @@ jobs:
     needs: ci
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # A job-level block replaces the inherited perms, so restate them; actions:
+    # write is new, for the `gh workflow run` in the dispatch step below.
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
+      # release-please authors the release PR as github-actions[bot], and GitHub
+      # gates a bot-authored PR's pull_request run behind manual approval, so
+      # ci.yml never starts there and its app-pinned required checks (test/npm/
+      # deny) sit unreported. Dispatch ci.yml onto the release branch instead: a
+      # workflow_dispatch run carrying GITHUB_TOKEN skips that approval gate, and
+      # its jobs self-skip on the release-please branch, reporting the required
+      # checks green in seconds. prs_created is true when a PR was created or
+      # updated; on a merge push that only cuts a release it's false and this skips.
+      - name: Dispatch CI onto the release PR
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "${{ fromJSON(steps.release.outputs.pr).headBranchName }}"
 
   build:
     needs: release-please
