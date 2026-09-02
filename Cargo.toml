@@ -5,6 +5,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "A GLSL checker and language server for WebGL shader toolkits (luma.gl/deck.gl, maplibre, ShaderToy) and any project"
 repository = "https://github.com/johncarmack1984/glslint"
+homepage = "https://johncarmack.com"
 keywords = ["glsl", "shader", "webgl", "lsp", "linter"]
 categories = ["development-tools", "command-line-utilities", "graphics"]
 # Binary-only on purpose: `glslint` ships as the `check`/`lsp` commands, not as a
