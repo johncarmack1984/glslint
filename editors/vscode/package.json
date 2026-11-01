@@ -2,7 +2,7 @@
   "name": "glslint",
   "displayName": "glslint",
   "description": "GLSL diagnostics for WebGL toolkits (luma.gl/deck.gl, maplibre, ShaderToy) — an LSP client for the glslint binary.",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "publisher": "johncarmack1984",
   "license": "MIT OR Apache-2.0",
   "icon": "icon.png",

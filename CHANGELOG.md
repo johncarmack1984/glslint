@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/johncarmack1984/glslint/compare/v0.8.1...v0.8.2) (2026-11-01)
+
+
+### Bug Fixes
+
+* **homebrew:** make the formula load on arm64 Linux so the tap can be tapped ([#63](https://github.com/johncarmack1984/glslint/issues/63)) ([1d1e20e](https://github.com/johncarmack1984/glslint/commit/1d1e20e11bf3e365159fe9fa46537fe2d6e7767c))
+
 ## [0.8.1](https://github.com/johncarmack1984/glslint/compare/v0.8.0...v0.8.1) (2026-08-10)
 
 
